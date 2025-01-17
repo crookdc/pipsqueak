@@ -4,17 +4,24 @@ pub enum Token {
     Eof,
 
     Identifier(String),
-    Int(String),
+    IntegerLiteral(String),
+    BooleanLiteral(String),
     Assign,
+
     Plus,
+    Minus,
+    Asterisk,
+    LessThan,
+    GreaterThan,
+
     Comma,
     Semicolon,
 
     LeftParenthesis,
     RightParenthesis,
     LeftCurlyBrace,
-
     RightCurlyBrace,
+
     Function,
     Let,
 }
@@ -24,6 +31,8 @@ impl Token {
         match word.as_str() {
             "let" => Some(Token::Let),
             "fn" => Some(Token::Function),
+            "true" => Some(Token::BooleanLiteral("true".to_string())),
+            "false" => Some(Token::BooleanLiteral("false".to_string())),
             _ => None,
         }
     }
@@ -78,6 +87,10 @@ impl Iterator for Lexer {
         let character = self.1[self.0];
         let token = match character {
             '+' => Token::Plus,
+            '-' => Token::Minus,
+            '*' => Token::Asterisk,
+            '<' => Token::LessThan,
+            '>' => Token::GreaterThan,
             '=' => Token::Assign,
             ',' => Token::Comma,
             ';' => Token::Semicolon,
@@ -95,7 +108,7 @@ impl Iterator for Lexer {
                         Token::Identifier(word)
                     }
                 } else if character.is_numeric() {
-                    Token::Int(self.next_int())
+                    Token::IntegerLiteral(self.next_int())
                 } else {
                     Token::Illegal(character.to_string())
                 }
@@ -119,17 +132,18 @@ mod tests {
                 x + y
             };
             let result = add(five, ten);
+            5 < ten * 0 - 1
         "#;
         let expected = vec![
             Token::Let,
             Token::Identifier("five".to_string()),
             Token::Assign,
-            Token::Int("5".to_string()),
+            Token::IntegerLiteral("5".to_string()),
             Token::Semicolon,
             Token::Let,
             Token::Identifier("ten".to_string()),
             Token::Assign,
-            Token::Int("10".to_string()),
+            Token::IntegerLiteral("10".to_string()),
             Token::Semicolon,
             Token::Let,
             Token::Identifier("add".to_string()),
@@ -156,6 +170,13 @@ mod tests {
             Token::Identifier("ten".to_string()),
             Token::RightParenthesis,
             Token::Semicolon,
+            Token::IntegerLiteral("5".to_string()),
+            Token::LessThan,
+            Token::Identifier("ten".to_string()),
+            Token::Asterisk,
+            Token::IntegerLiteral("0".to_string()),
+            Token::Minus,
+            Token::IntegerLiteral("1".to_string()),
             Token::Eof,
         ];
         for (i, token) in Lexer::new(input.chars().collect()).enumerate() {
