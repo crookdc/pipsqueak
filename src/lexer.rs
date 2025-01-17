@@ -5,14 +5,21 @@ pub enum Token {
 
     Identifier(String),
     IntegerLiteral(String),
-    BooleanLiteral(String),
+    True,
+    False,
+    If,
+    LessThan,
+    GreaterThan,
+    Equals,
+    NotEquals,
+    Else,
+    Return,
     Assign,
+    Bang,
 
     Plus,
     Minus,
     Asterisk,
-    LessThan,
-    GreaterThan,
 
     Comma,
     Semicolon,
@@ -31,8 +38,11 @@ impl Token {
         match word.as_str() {
             "let" => Some(Token::Let),
             "fn" => Some(Token::Function),
-            "true" => Some(Token::BooleanLiteral("true".to_string())),
-            "false" => Some(Token::BooleanLiteral("false".to_string())),
+            "if" => Some(Token::If),
+            "else" => Some(Token::Else),
+            "return" => Some(Token::Return),
+            "true" => Some(Token::True),
+            "false" => Some(Token::False),
             _ => None,
         }
     }
@@ -43,6 +53,10 @@ pub struct Lexer(usize, Vec<char>);
 impl Lexer {
     pub fn new(source: Vec<char>) -> Self {
         Self(0, source)
+    }
+
+    fn peek(&self) -> Option<char> {
+        self.1.get(self.0 + 1).cloned()
     }
 
     fn next_word(&mut self) -> String {
@@ -91,7 +105,20 @@ impl Iterator for Lexer {
             '*' => Token::Asterisk,
             '<' => Token::LessThan,
             '>' => Token::GreaterThan,
-            '=' => Token::Assign,
+            '=' => match self.peek() {
+                Some('=') => {
+                    self.0 += 1;
+                    Token::Equals
+                }
+                _ => Token::Assign,
+            },
+            '!' => match self.peek() {
+                Some('=') => {
+                    self.0 += 1;
+                    Token::NotEquals
+                }
+                _ => Token::Bang,
+            },
             ',' => Token::Comma,
             ';' => Token::Semicolon,
             '(' => Token::LeftParenthesis,
@@ -132,7 +159,15 @@ mod tests {
                 x + y
             };
             let result = add(five, ten);
-            5 < ten * 0 - 1
+
+            if (five * 2 < 15) {
+                return true;
+            } else {
+                return false;
+            }
+
+            10 == 10
+            10 != 10
         "#;
         let expected = vec![
             Token::Let,
@@ -170,13 +205,31 @@ mod tests {
             Token::Identifier("ten".to_string()),
             Token::RightParenthesis,
             Token::Semicolon,
-            Token::IntegerLiteral("5".to_string()),
-            Token::LessThan,
-            Token::Identifier("ten".to_string()),
+            Token::If,
+            Token::LeftParenthesis,
+            Token::Identifier("five".to_string()),
             Token::Asterisk,
-            Token::IntegerLiteral("0".to_string()),
-            Token::Minus,
-            Token::IntegerLiteral("1".to_string()),
+            Token::IntegerLiteral("2".to_string()),
+            Token::LessThan,
+            Token::IntegerLiteral("15".to_string()),
+            Token::RightParenthesis,
+            Token::LeftCurlyBrace,
+            Token::Return,
+            Token::True,
+            Token::Semicolon,
+            Token::RightCurlyBrace,
+            Token::Else,
+            Token::LeftCurlyBrace,
+            Token::Return,
+            Token::False,
+            Token::Semicolon,
+            Token::RightCurlyBrace,
+            Token::IntegerLiteral("10".to_string()),
+            Token::Equals,
+            Token::IntegerLiteral("10".to_string()),
+            Token::IntegerLiteral("10".to_string()),
+            Token::NotEquals,
+            Token::IntegerLiteral("10".to_string()),
             Token::Eof,
         ];
         for (i, token) in Lexer::new(input.chars().collect()).enumerate() {
