@@ -21,6 +21,20 @@ impl ParseError {
             token: Some(expected),
         }
     }
+
+    fn unrecognized_token(found: Token) -> ParseError {
+        Self {
+            msg: format!("unrecognized token for current context {found:?}"),
+            token: Some(found),
+        }
+    }
+
+    fn malformed(value: &str) -> ParseError {
+        Self {
+            msg: format!("malformed input for type {value}"),
+            token: None,
+        }
+    }
 }
 
 pub struct Parser {
@@ -40,7 +54,7 @@ impl Parser {
             match token {
                 Token::Let => program.push(self.parse_let(token)?),
                 Token::Return => program.push(self.parse_return(token)?),
-                _ => todo!(),
+                other => program.push(StatementNode::Expression(self.parse_expression(other)?)),
             }
         }
         Ok(program)
@@ -71,20 +85,44 @@ impl Parser {
 
     fn parse_return(&mut self, parent: Token) -> Result<StatementNode, ParseError> {
         debug_assert_eq!(Token::Return, parent);
-        let expr = if let Ok(e) = self.parse_expression() {
-            Some(e)
+        let expr = if let Some(token) = self.lexer.next() {
+            match token {
+                Token::Semicolon => Ok(None),
+                other => Ok(Some(self.parse_expression(other)?)),
+            }
         } else {
-            None
-        };
-        self.seek_token(Token::Semicolon)?;
+            Err(ParseError::eof())
+        }?;
         Ok(StatementNode::Return(expr))
     }
 
-    fn parse_expression(&mut self) -> Result<ExpressionNode, ParseError> {
-        Err(ParseError {
-            msg: "not implemented".to_string(),
-            token: None,
-        })
+    fn parse_expression(&mut self, token: Token) -> Result<ExpressionNode, ParseError> {
+        match token {
+            Token::Identifier(name) => {
+                self.seek_token(Token::Semicolon)?;
+                Ok(ExpressionNode::Identifier(name))
+            }
+            Token::IntegerLiteral(value) => {
+                self.seek_token(Token::Semicolon)?;
+                let parsed = value
+                    .parse::<i32>()
+                    .map_err(|err| ParseError::malformed(value.as_str()))?;
+                Ok(ExpressionNode::Integer(parsed))
+            }
+            Token::Bang => self.parse_prefix_expression("!"),
+            Token::Minus => self.parse_prefix_expression("-"),
+            _ => Err(ParseError::unrecognized_token(token)),
+        }
+    }
+
+    fn parse_prefix_expression(&mut self, operator: &str) -> Result<ExpressionNode, ParseError> {
+        match self.lexer.next() {
+            None => Err(ParseError::eof()),
+            Some(expr) => Ok(ExpressionNode::Prefix(
+                operator.to_string(),
+                Box::new(self.parse_expression(expr)?),
+            )),
+        }
     }
 
     fn expect_next_token(&mut self, kind: Token) -> Result<Token, ParseError> {
@@ -119,6 +157,7 @@ trait Node {
 enum StatementNode {
     Let(String, Option<ExpressionNode>),
     Return(Option<ExpressionNode>),
+    Expression(ExpressionNode),
 }
 
 impl Node for StatementNode {
@@ -140,19 +179,24 @@ impl Node for StatementNode {
                 out += ";";
                 out
             }
+            StatementNode::Expression(expr) => expr.literal(),
         }
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 enum ExpressionNode {
     Identifier(String),
+    Integer(i32),
+    Prefix(String, Box<ExpressionNode>),
 }
 
 impl Node for ExpressionNode {
     fn literal(&self) -> String {
         match self {
             ExpressionNode::Identifier(name) => name.clone(),
+            ExpressionNode::Integer(value) => value.to_string(),
+            ExpressionNode::Prefix(operator, expr) => format!("{operator}{}", expr.literal()),
         }
     }
 }
@@ -188,6 +232,7 @@ impl Node for ProgramNode {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::ops::Deref;
 
     #[test]
     fn test_parse_let() {
@@ -219,7 +264,67 @@ mod tests {
         for stmt in program.statements {
             match stmt {
                 StatementNode::Return(..) => {}
-                _ => panic!("unexpected statement {stmt:?}"),
+                other => panic!("unexpected statement {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn test_parse_identifier_expression() {
+        let source = "foobar; foo; bar;";
+        let mut parser = Parser::new(Lexer::new(source.chars().collect()));
+        let mut program = parser.parse().unwrap();
+        assert_eq!(3, program.len());
+        for identifier in vec!["foobar", "foo", "bar"] {
+            let stmt = program.pop();
+            match stmt {
+                Some(StatementNode::Expression(ExpressionNode::Identifier(name))) => {
+                    assert_eq!(identifier, name);
+                }
+                Some(other) => panic!("unexpected statement {other:?}"),
+                None => panic!("unexpected end of statements"),
+            }
+        }
+    }
+
+    #[test]
+    fn test_parse_integer_expression() {
+        let source = "5; 110;";
+        let mut parser = Parser::new(Lexer::new(source.chars().collect()));
+        let mut program = parser.parse().unwrap();
+        assert_eq!(2, program.len());
+        for literal in vec![5, 110] {
+            match program.pop() {
+                None => panic!("unexpected end on statements"),
+                Some(StatementNode::Expression(ExpressionNode::Integer(value))) => {
+                    assert_eq!(literal, value);
+                }
+                Some(other) => panic!("unexpected statement {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn test_parse_prefix_expression() {
+        let assertions = vec![
+            ("-5;", "-", Box::new(ExpressionNode::Integer(5))),
+            (
+                "!foo;",
+                "!",
+                Box::new(ExpressionNode::Identifier("foo".to_string())),
+            ),
+        ];
+        for assertion in assertions {
+            let mut parser = Parser::new(Lexer::new(assertion.0.chars().collect()));
+            let mut program = parser.parse().unwrap();
+            assert_eq!(1, program.len());
+            match program.pop() {
+                Some(StatementNode::Expression(ExpressionNode::Prefix(operator, expr))) => {
+                    assert_eq!(assertion.1, operator);
+                    assert_eq!(assertion.2, expr);
+                }
+                Some(other) => panic!("unexpected statement {other:?}"),
+                None => panic!("unexpected end of statements"),
             }
         }
     }
