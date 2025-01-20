@@ -2,7 +2,6 @@
 pub enum Token {
     Illegal(String),
     Eof,
-
     Identifier(String),
     IntegerLiteral(String),
     True,
@@ -16,19 +15,16 @@ pub enum Token {
     Return,
     Assign,
     Bang,
-
     Plus,
     Minus,
     Asterisk,
-
+    Slash,
     Comma,
     Semicolon,
-
     LeftParenthesis,
     RightParenthesis,
     LeftCurlyBrace,
     RightCurlyBrace,
-
     Function,
     Let,
 }
@@ -48,45 +44,56 @@ impl Token {
     }
 }
 
-pub struct Lexer(usize, Vec<char>);
+#[derive(Debug, Clone)]
+pub struct Lexer {
+    index: usize,
+    source: Vec<char>,
+}
 
 impl Lexer {
     pub fn new(source: Vec<char>) -> Self {
-        Self(0, source)
+        Self { index: 0, source }
     }
 
-    fn peek(&self) -> Option<char> {
-        self.1.get(self.0 + 1).cloned()
+    fn peek_char(&self) -> Option<char> {
+        self.source.get(self.index + 1).cloned()
     }
 
     fn next_word(&mut self) -> String {
         let mut word = String::new();
-        while self.0 < self.1.len() && Self::valid_identifier(self.1[self.0]) {
-            word.push(self.1[self.0]);
-            self.0 += 1;
+        while self.index < self.source.len() && Self::valid_identifier(self.source[self.index]) {
+            word.push(self.source[self.index]);
+            self.index += 1;
         }
-        self.0 -= 1;
+        self.index -= 1;
         word
     }
 
     fn next_int(&mut self) -> String {
         let mut number = String::new();
-        while self.0 < self.1.len() && self.1[self.0].is_numeric() {
-            number.push(self.1[self.0]);
-            self.0 += 1
+        while self.index < self.source.len() && self.source[self.index].is_numeric() {
+            number.push(self.source[self.index]);
+            self.index += 1
         }
-        self.0 -= 1;
+        self.index -= 1;
         number
     }
 
     fn seek_non_whitespace(&mut self) {
-        while self.0 < self.1.len() && self.1[self.0].is_whitespace() {
-            self.0 += 1;
+        while self.index < self.source.len() && self.source[self.index].is_whitespace() {
+            self.index += 1;
         }
     }
 
     fn valid_identifier(character: char) -> bool {
         character.is_alphabetic() || character == '_'
+    }
+
+    pub fn peek(&mut self) -> Option<Token> {
+        let previous = self.index;
+        let item = self.next();
+        self.index = previous;
+        item
     }
 }
 
@@ -95,26 +102,27 @@ impl Iterator for Lexer {
 
     fn next(&mut self) -> Option<Self::Item> {
         self.seek_non_whitespace();
-        if self.0 >= self.1.len() {
+        if self.index >= self.source.len() {
             return None;
         }
-        let character = self.1[self.0];
+        let character = self.source[self.index];
         let token = match character {
             '+' => Token::Plus,
             '-' => Token::Minus,
             '*' => Token::Asterisk,
+            '/' => Token::Slash,
             '<' => Token::LessThan,
             '>' => Token::GreaterThan,
-            '=' => match self.peek() {
+            '=' => match self.peek_char() {
                 Some('=') => {
-                    self.0 += 1;
+                    self.index += 1;
                     Token::Equals
                 }
                 _ => Token::Assign,
             },
-            '!' => match self.peek() {
+            '!' => match self.peek_char() {
                 Some('=') => {
-                    self.0 += 1;
+                    self.index += 1;
                     Token::NotEquals
                 }
                 _ => Token::Bang,
@@ -141,7 +149,7 @@ impl Iterator for Lexer {
                 }
             }
         };
-        self.0 += 1;
+        self.index += 1;
         Some(token)
     }
 }

@@ -1,4 +1,5 @@
 use crate::lexer::{Lexer, Token};
+use std::cmp::PartialOrd;
 use std::collections::VecDeque;
 
 #[derive(Debug)]
@@ -37,6 +38,28 @@ impl ParseError {
     }
 }
 
+#[derive(Debug, PartialOrd, PartialEq)]
+enum Precedence {
+    Lowest = 0,
+    Comparison = 1,
+    Sum = 2,
+    Product = 3,
+    Prefix = 4,
+    Call = 5,
+}
+
+impl Precedence {
+    fn from_operator(op: &Token) -> Option<Precedence> {
+        match op {
+            Token::Plus => Some(Precedence::Sum),
+            Token::Minus => Some(Precedence::Sum),
+            Token::Asterisk => Some(Precedence::Product),
+            Token::Slash => Some(Precedence::Product),
+            _ => None,
+        }
+    }
+}
+
 pub struct Parser {
     lexer: Lexer,
 }
@@ -54,7 +77,9 @@ impl Parser {
             match token {
                 Token::Let => program.push(self.parse_let(token)?),
                 Token::Return => program.push(self.parse_return(token)?),
-                other => program.push(StatementNode::Expression(self.parse_expression(other)?)),
+                other => program.push(StatementNode::Expression(
+                    self.parse_expression(other, Precedence::Lowest)?,
+                )),
             }
         }
         Ok(program)
@@ -88,7 +113,7 @@ impl Parser {
         let expr = if let Some(token) = self.lexer.next() {
             match token {
                 Token::Semicolon => Ok(None),
-                other => Ok(Some(self.parse_expression(other)?)),
+                other => Ok(Some(self.parse_expression(other, Precedence::Lowest)?)),
             }
         } else {
             Err(ParseError::eof())
@@ -96,32 +121,71 @@ impl Parser {
         Ok(StatementNode::Return(expr))
     }
 
-    fn parse_expression(&mut self, token: Token) -> Result<ExpressionNode, ParseError> {
-        match token {
-            Token::Identifier(name) => {
-                self.seek_token(Token::Semicolon)?;
-                Ok(ExpressionNode::Identifier(name))
-            }
+    fn parse_expression(
+        &mut self,
+        token: Token,
+        precedence: Precedence,
+    ) -> Result<ExpressionNode, ParseError> {
+        let mut expr = match token {
+            Token::Identifier(name) => Ok(ExpressionNode::Identifier(name)),
             Token::IntegerLiteral(value) => {
-                self.seek_token(Token::Semicolon)?;
                 let parsed = value
                     .parse::<i32>()
                     .map_err(|err| ParseError::malformed(value.as_str()))?;
                 Ok(ExpressionNode::Integer(parsed))
             }
-            Token::Bang => self.parse_prefix_expression("!"),
-            Token::Minus => self.parse_prefix_expression("-"),
+            Token::Bang => self.parse_prefix_expression(Token::Bang),
+            Token::Minus => self.parse_prefix_expression(Token::Minus),
             _ => Err(ParseError::unrecognized_token(token)),
+        }?;
+        while let Some(peeked) = self.lexer.peek() {
+            match peeked {
+                Token::Semicolon => {
+                    self.lexer.next();
+                    return Ok(expr);
+                }
+                _ => {
+                    let other_precedence = Precedence::from_operator(&peeked);
+                    if other_precedence.is_none() {
+                        self.lexer.next();
+                        return Err(ParseError::unrecognized_token(peeked));
+                    }
+                    if precedence < other_precedence.unwrap() {
+                        self.lexer.next();
+                        expr = self.parse_infix_expression(peeked, expr)?;
+                    } else {
+                        return Ok(expr);
+                    }
+                }
+            }
         }
+        Ok(expr)
     }
 
-    fn parse_prefix_expression(&mut self, operator: &str) -> Result<ExpressionNode, ParseError> {
+    fn parse_prefix_expression(&mut self, operator: Token) -> Result<ExpressionNode, ParseError> {
         match self.lexer.next() {
             None => Err(ParseError::eof()),
             Some(expr) => Ok(ExpressionNode::Prefix(
-                operator.to_string(),
-                Box::new(self.parse_expression(expr)?),
+                operator,
+                Box::new(self.parse_expression(expr, Precedence::Prefix)?),
             )),
+        }
+    }
+
+    fn parse_infix_expression(
+        &mut self,
+        operator: Token,
+        left: ExpressionNode,
+    ) -> Result<ExpressionNode, ParseError> {
+        let precedence = Precedence::from_operator(&operator).unwrap();
+        if let Some(next) = self.lexer.next() {
+            Ok(ExpressionNode::Infix(
+                operator,
+                Box::new(left),
+                Box::new(self.parse_expression(next, precedence)?),
+            ))
+        } else {
+            Err(ParseError::eof())
         }
     }
 
@@ -188,7 +252,8 @@ impl Node for StatementNode {
 enum ExpressionNode {
     Identifier(String),
     Integer(i32),
-    Prefix(String, Box<ExpressionNode>),
+    Prefix(Token, Box<ExpressionNode>),
+    Infix(Token, Box<ExpressionNode>, Box<ExpressionNode>),
 }
 
 impl Node for ExpressionNode {
@@ -196,7 +261,10 @@ impl Node for ExpressionNode {
         match self {
             ExpressionNode::Identifier(name) => name.clone(),
             ExpressionNode::Integer(value) => value.to_string(),
-            ExpressionNode::Prefix(operator, expr) => format!("{operator}{}", expr.literal()),
+            ExpressionNode::Prefix(operator, left) => format!("{operator:?}{}", left.literal()),
+            ExpressionNode::Infix(operator, left, right) => {
+                format!("{}{operator:?}{}", left.literal(), right.literal())
+            }
         }
     }
 }
@@ -232,7 +300,6 @@ impl Node for ProgramNode {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::ops::Deref;
 
     #[test]
     fn test_parse_let() {
@@ -307,10 +374,10 @@ mod tests {
     #[test]
     fn test_parse_prefix_expression() {
         let assertions = vec![
-            ("-5;", "-", Box::new(ExpressionNode::Integer(5))),
+            ("-5;", Token::Minus, Box::new(ExpressionNode::Integer(5))),
             (
                 "!foo;",
-                "!",
+                Token::Bang,
                 Box::new(ExpressionNode::Identifier("foo".to_string())),
             ),
         ];
@@ -326,6 +393,27 @@ mod tests {
                 Some(other) => panic!("unexpected statement {other:?}"),
                 None => panic!("unexpected end of statements"),
             }
+        }
+    }
+
+    #[test]
+    fn test_parse_infix_expression() {
+        let source = "-5 + 10;";
+        let mut parser = Parser::new(Lexer::new(source.chars().collect()));
+        let mut program = parser.parse().unwrap();
+        assert_eq!(1, program.len());
+        match program.pop().unwrap() {
+            StatementNode::Expression(ExpressionNode::Infix(Token::Plus, left, right)) => {
+                assert_eq!(
+                    Box::new(ExpressionNode::Prefix(
+                        Token::Minus,
+                        Box::new(ExpressionNode::Integer(5))
+                    )),
+                    left
+                );
+                assert_eq!(Box::new(ExpressionNode::Integer(10)), right)
+            }
+            other => panic!("unexpected statement {other:?}"),
         }
     }
 }
