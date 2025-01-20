@@ -326,7 +326,7 @@ mod tests {
         return 11012;
         "#;
         let mut parser = Parser::new(Lexer::new(source.chars().collect()));
-        let mut program = parser.parse().unwrap();
+        let program = parser.parse().unwrap();
         assert_eq!(2, program.len());
         for stmt in program.statements {
             match stmt {
