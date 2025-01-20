@@ -91,32 +91,31 @@ impl Parser {
         match self.lexer.next() {
             Some(Token::Identifier(name)) => identifier = name,
             Some(token) => {
-                return Err(ParseError {
-                    msg: format!("expected identifier but got {token:?}"),
-                    token: Some(token),
-                });
+                return Err(ParseError::unrecognized_token(token));
             }
-            _ => {
-                return Err(ParseError {
-                    msg: "unexpected end of statement".to_string(),
-                    token: Some(parent),
-                });
+            None => {
+                return Err(ParseError::eof());
             }
         }
         self.expect_next_token(Token::Assign)?;
-        self.seek_token(Token::Semicolon)?;
-        Ok(StatementNode::Let(identifier, None))
+        let expr = match self.lexer.next() {
+            Some(Token::Semicolon) => Ok(None),
+            Some(token) => self
+                .parse_expression(token, Precedence::Lowest)
+                .map(|e| Some(e)),
+            None => Err(ParseError::eof()),
+        }?;
+        Ok(StatementNode::Let(identifier, expr))
     }
 
     fn parse_return(&mut self, parent: Token) -> Result<StatementNode, ParseError> {
         debug_assert_eq!(Token::Return, parent);
-        let expr = if let Some(token) = self.lexer.next() {
-            match token {
-                Token::Semicolon => Ok(None),
-                other => Ok(Some(self.parse_expression(other, Precedence::Lowest)?)),
-            }
-        } else {
-            Err(ParseError::eof())
+        let expr = match self.lexer.next() {
+            Some(Token::Semicolon) => Ok(None),
+            Some(token) => self
+                .parse_expression(token, Precedence::Lowest)
+                .map(|e| Some(e)),
+            None => Err(ParseError::eof()),
         }?;
         Ok(StatementNode::Return(expr))
     }
@@ -213,12 +212,12 @@ impl Parser {
     }
 }
 
-trait Node {
+pub trait Node {
     fn literal(&self) -> String;
 }
 
 #[derive(Debug)]
-enum StatementNode {
+pub enum StatementNode {
     Let(String, Option<ExpressionNode>),
     Return(Option<ExpressionNode>),
     Expression(ExpressionNode),
@@ -249,7 +248,7 @@ impl Node for StatementNode {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-enum ExpressionNode {
+pub enum ExpressionNode {
     Identifier(String),
     Integer(i32),
     Prefix(Token, Box<ExpressionNode>),
