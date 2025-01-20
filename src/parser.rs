@@ -98,26 +98,22 @@ impl Parser {
             }
         }
         self.expect_next_token(Token::Assign)?;
-        let expr = match self.lexer.next() {
-            Some(Token::Semicolon) => Ok(None),
-            Some(token) => self
-                .parse_expression(token, Precedence::Lowest)
-                .map(|e| Some(e)),
-            None => Err(ParseError::eof()),
-        }?;
-        Ok(StatementNode::Let(identifier, expr))
+        Ok(StatementNode::Let(identifier, self.parse_remaining_expression()?))
     }
 
     fn parse_return(&mut self, parent: Token) -> Result<StatementNode, ParseError> {
         debug_assert_eq!(Token::Return, parent);
-        let expr = match self.lexer.next() {
+        Ok(StatementNode::Return(self.parse_remaining_expression()?))
+    }
+
+    fn parse_remaining_expression(&mut self) -> Result<Option<ExpressionNode>, ParseError> {
+        match self.lexer.next() {
             Some(Token::Semicolon) => Ok(None),
             Some(token) => self
                 .parse_expression(token, Precedence::Lowest)
-                .map(|e| Some(e)),
+                .map(|expr| Some(expr)),
             None => Err(ParseError::eof()),
-        }?;
-        Ok(StatementNode::Return(expr))
+        }
     }
 
     fn parse_expression(
