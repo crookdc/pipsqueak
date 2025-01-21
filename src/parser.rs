@@ -51,6 +51,7 @@ enum Precedence {
 impl Precedence {
     fn from_operator(op: &Token) -> Option<Precedence> {
         match op {
+            Token::RightParenthesis => Some(Precedence::Lowest),
             Token::Plus => Some(Precedence::Sum),
             Token::Minus => Some(Precedence::Sum),
             Token::Asterisk => Some(Precedence::Product),
@@ -140,6 +141,14 @@ impl Parser {
             Token::False => Ok(ExpressionNode::Boolean(false)),
             Token::Bang => self.parse_prefix_expression(Token::Bang),
             Token::Minus => self.parse_prefix_expression(Token::Minus),
+            Token::LeftParenthesis => {
+                let expr = match self.lexer.next() {
+                    None => Err(ParseError::eof()),
+                    Some(next) => self.parse_expression(next, Precedence::Lowest),
+                }?;
+                self.expect_next_token(Token::RightParenthesis)?;
+                Ok(expr)
+            }
             _ => Err(ParseError::unrecognized_token(token)),
         }?;
         while let Some(peeked) = self.lexer.peek() {
@@ -459,6 +468,16 @@ mod tests {
                 Box::new(ExpressionNode::Boolean(false)),
                 Token::NotEquals,
                 Box::new(ExpressionNode::Boolean(false)),
+            ),
+            (
+                "(1 + 2) * 5;",
+                Box::new(ExpressionNode::Infix(
+                    Token::Plus,
+                    Box::new(ExpressionNode::Integer(1)),
+                    Box::new(ExpressionNode::Integer(2)),
+                )),
+                Token::Asterisk,
+                Box::new(ExpressionNode::Integer(5)),
             ),
         ];
         for test in tests {
