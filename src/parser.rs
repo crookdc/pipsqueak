@@ -55,6 +55,10 @@ impl Precedence {
             Token::Minus => Some(Precedence::Sum),
             Token::Asterisk => Some(Precedence::Product),
             Token::Slash => Some(Precedence::Product),
+            Token::Equals => Some(Precedence::Comparison),
+            Token::NotEquals => Some(Precedence::Comparison),
+            Token::LessThan => Some(Precedence::Comparison),
+            Token::GreaterThan => Some(Precedence::Comparison),
             _ => None,
         }
     }
@@ -98,7 +102,10 @@ impl Parser {
             }
         }
         self.expect_next_token(Token::Assign)?;
-        Ok(StatementNode::Let(identifier, self.parse_remaining_expression()?))
+        Ok(StatementNode::Let(
+            identifier,
+            self.parse_remaining_expression()?,
+        ))
     }
 
     fn parse_return(&mut self, parent: Token) -> Result<StatementNode, ParseError> {
@@ -129,6 +136,8 @@ impl Parser {
                     .map_err(|err| ParseError::malformed(value.as_str()))?;
                 Ok(ExpressionNode::Integer(parsed))
             }
+            Token::True => Ok(ExpressionNode::Boolean(true)),
+            Token::False => Ok(ExpressionNode::Boolean(false)),
             Token::Bang => self.parse_prefix_expression(Token::Bang),
             Token::Minus => self.parse_prefix_expression(Token::Minus),
             _ => Err(ParseError::unrecognized_token(token)),
@@ -247,6 +256,7 @@ impl Node for StatementNode {
 pub enum ExpressionNode {
     Identifier(String),
     Integer(i32),
+    Boolean(bool),
     Prefix(Token, Box<ExpressionNode>),
     Infix(Token, Box<ExpressionNode>, Box<ExpressionNode>),
 }
@@ -256,6 +266,7 @@ impl Node for ExpressionNode {
         match self {
             ExpressionNode::Identifier(name) => name.clone(),
             ExpressionNode::Integer(value) => value.to_string(),
+            ExpressionNode::Boolean(value) => value.to_string(),
             ExpressionNode::Prefix(operator, left) => format!("{operator:?}{}", left.literal()),
             ExpressionNode::Infix(operator, left, right) => {
                 format!("{}{operator:?}{}", left.literal(), right.literal())
@@ -367,6 +378,22 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_boolean_expression() {
+        let source = "true; false;";
+        let mut parser = Parser::new(Lexer::new(source.chars().collect()));
+        let mut program = parser.parse().unwrap();
+        assert_eq!(2, program.len());
+        for literal in vec![true, false] {
+            match program.pop().unwrap() {
+                StatementNode::Expression(ExpressionNode::Boolean(value)) => {
+                    assert_eq!(literal, value);
+                }
+                other => panic!("unexpected statement {other:?}"),
+            }
+        }
+    }
+
+    #[test]
     fn test_parse_prefix_expression() {
         let assertions = vec![
             ("-5;", Token::Minus, Box::new(ExpressionNode::Integer(5))),
@@ -380,35 +407,72 @@ mod tests {
             let mut parser = Parser::new(Lexer::new(assertion.0.chars().collect()));
             let mut program = parser.parse().unwrap();
             assert_eq!(1, program.len());
-            match program.pop() {
-                Some(StatementNode::Expression(ExpressionNode::Prefix(operator, expr))) => {
+            match program.pop().unwrap() {
+                StatementNode::Expression(ExpressionNode::Prefix(operator, expr)) => {
                     assert_eq!(assertion.1, operator);
                     assert_eq!(assertion.2, expr);
                 }
-                Some(other) => panic!("unexpected statement {other:?}"),
-                None => panic!("unexpected end of statements"),
+                other => panic!("unexpected statement {other:?}"),
             }
         }
     }
 
     #[test]
     fn test_parse_infix_expression() {
-        let source = "-5 + 10;";
-        let mut parser = Parser::new(Lexer::new(source.chars().collect()));
-        let mut program = parser.parse().unwrap();
-        assert_eq!(1, program.len());
-        match program.pop().unwrap() {
-            StatementNode::Expression(ExpressionNode::Infix(Token::Plus, left, right)) => {
-                assert_eq!(
-                    Box::new(ExpressionNode::Prefix(
-                        Token::Minus,
-                        Box::new(ExpressionNode::Integer(5))
-                    )),
-                    left
-                );
-                assert_eq!(Box::new(ExpressionNode::Integer(10)), right)
+        let tests = vec![
+            (
+                "5 + 5;",
+                Box::new(ExpressionNode::Integer(5)),
+                Token::Plus,
+                Box::new(ExpressionNode::Integer(5)),
+            ),
+            (
+                "-5 + 10;",
+                Box::new(ExpressionNode::Prefix(
+                    Token::Minus,
+                    Box::new(ExpressionNode::Integer(5)),
+                )),
+                Token::Plus,
+                Box::new(ExpressionNode::Integer(10)),
+            ),
+            (
+                "-5 > 10 - 6;",
+                Box::new(ExpressionNode::Prefix(
+                    Token::Minus,
+                    Box::new(ExpressionNode::Integer(5)),
+                )),
+                Token::GreaterThan,
+                Box::new(ExpressionNode::Infix(
+                    Token::Minus,
+                    Box::new(ExpressionNode::Integer(10)),
+                    Box::new(ExpressionNode::Integer(6)),
+                )),
+            ),
+            (
+                "true == false;",
+                Box::new(ExpressionNode::Boolean(true)),
+                Token::Equals,
+                Box::new(ExpressionNode::Boolean(false)),
+            ),
+            (
+                "false != false;",
+                Box::new(ExpressionNode::Boolean(false)),
+                Token::NotEquals,
+                Box::new(ExpressionNode::Boolean(false)),
+            ),
+        ];
+        for test in tests {
+            let mut parser = Parser::new(Lexer::new(test.0.chars().collect()));
+            let mut program = parser.parse().unwrap();
+            assert_eq!(1, program.len());
+            match program.pop().unwrap() {
+                StatementNode::Expression(ExpressionNode::Infix(operator, left, right)) => {
+                    assert_eq!(test.1, left);
+                    assert_eq!(test.2, operator);
+                    assert_eq!(test.3, right);
+                }
+                other => panic!("unexpected statement {other:?}"),
             }
-            other => panic!("unexpected statement {other:?}"),
         }
     }
 }
