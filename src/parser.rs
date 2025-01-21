@@ -79,39 +79,55 @@ impl Parser {
             statements: VecDeque::new(),
         };
         while let Some(token) = self.lexer.next() {
-            match token {
-                Token::Let => program.push(self.parse_let(token)?),
-                Token::Return => program.push(self.parse_return(token)?),
-                other => program.push(StatementNode::Expression(
-                    self.parse_expression(other, Precedence::Lowest)?,
-                )),
-            }
+            program.push(self.parse_statement(token)?);
         }
         Ok(program)
     }
 
-    fn parse_let(&mut self, parent: Token) -> Result<StatementNode, ParseError> {
-        debug_assert_eq!(Token::Let, parent);
-        let identifier;
-        match self.lexer.next() {
-            Some(Token::Identifier(name)) => identifier = name,
-            Some(token) => {
-                return Err(ParseError::unrecognized_token(token));
+    fn parse_statement(&mut self, token: Token) -> Result<StatementNode, ParseError> {
+        match token {
+            Token::Let => {
+                let identifier = match self.lexer.next() {
+                    Some(Token::Identifier(name)) => Ok(name),
+                    Some(token) => Err(ParseError::unrecognized_token(token)),
+                    None => Err(ParseError::eof()),
+                }?;
+                self.expect_next_token(Token::Assign)?;
+                Ok(StatementNode::Let(
+                    identifier,
+                    self.parse_remaining_expression()?,
+                ))
             }
-            None => {
-                return Err(ParseError::eof());
+            Token::Return => Ok(StatementNode::Return(self.parse_remaining_expression()?)),
+            Token::LeftCurlyBrace => {
+                let mut block = vec![];
+                while let Some(peeked) = self.lexer.peek() {
+                    if peeked == Token::RightCurlyBrace {
+                        break;
+                    }
+                    self.lexer.next().unwrap();
+                    block.push(self.parse_statement(peeked)?);
+                }
+                self.expect_next_token(Token::RightCurlyBrace)?;
+                Ok(StatementNode::Block(block))
             }
+            Token::If => {
+                self.expect_next_token(Token::LeftParenthesis)?;
+                let condition = match self.lexer.next() {
+                    None => Err(ParseError::eof()),
+                    Some(next) => self.parse_expression(next, Precedence::Lowest),
+                }?;
+                self.expect_next_token(Token::RightParenthesis)?;
+                let consequence = match self.lexer.next() {
+                    None => Err(ParseError::eof()),
+                    Some(next) => self.parse_statement(next),
+                }?;
+                Ok(StatementNode::If(condition, Box::new(consequence), None))
+            }
+            other => Ok(StatementNode::Expression(
+                self.parse_expression(other, Precedence::Lowest)?,
+            )),
         }
-        self.expect_next_token(Token::Assign)?;
-        Ok(StatementNode::Let(
-            identifier,
-            self.parse_remaining_expression()?,
-        ))
-    }
-
-    fn parse_return(&mut self, parent: Token) -> Result<StatementNode, ParseError> {
-        debug_assert_eq!(Token::Return, parent);
-        Ok(StatementNode::Return(self.parse_remaining_expression()?))
     }
 
     fn parse_remaining_expression(&mut self) -> Result<Option<ExpressionNode>, ParseError> {
@@ -156,11 +172,10 @@ impl Parser {
                 Token::Semicolon => {
                     self.lexer.next();
                     return Ok(expr);
-                }
+                },
                 _ => {
                     let other_precedence = Precedence::from_operator(&peeked);
                     if other_precedence.is_none() {
-                        self.lexer.next();
                         return Err(ParseError::unrecognized_token(peeked));
                     }
                     if precedence < other_precedence.unwrap() {
@@ -230,11 +245,17 @@ pub trait Node {
     fn literal(&self) -> String;
 }
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum StatementNode {
     Let(String, Option<ExpressionNode>),
     Return(Option<ExpressionNode>),
     Expression(ExpressionNode),
+    Block(Vec<StatementNode>),
+    If(
+        ExpressionNode,
+        Box<StatementNode>,
+        Option<Box<StatementNode>>,
+    ),
 }
 
 impl Node for StatementNode {
@@ -257,6 +278,12 @@ impl Node for StatementNode {
                 out
             }
             StatementNode::Expression(expr) => expr.literal(),
+            StatementNode::Block(statements) => {
+                statements.iter().map(|stmt| stmt.literal()).collect()
+            }
+            StatementNode::If(condition, consequence, alternative) => {
+                format!("if {condition:?} then {consequence:?} else {alternative:?}")
+            }
         }
     }
 }
@@ -492,6 +519,38 @@ mod tests {
                 }
                 other => panic!("unexpected statement {other:?}"),
             }
+        }
+    }
+
+    #[test]
+    fn test_parse_if_statement() {
+        let source = r#"
+        if (a < b) {
+            let c = 10;
+        }
+        "#;
+        let mut parser = Parser::new(Lexer::new(source.chars().collect()));
+        let mut program = parser.parse().unwrap();
+        assert_eq!(1, program.len());
+        match program.pop().unwrap() {
+            StatementNode::If(condition, consequence, None) => {
+                assert_eq!(
+                    ExpressionNode::Infix(
+                        Token::LessThan,
+                        Box::new(ExpressionNode::Identifier("a".to_string())),
+                        Box::new(ExpressionNode::Identifier("b".to_string()))
+                    ),
+                    condition
+                );
+                assert_eq!(
+                    Box::new(StatementNode::Block(vec![StatementNode::Let(
+                        "c".to_string(),
+                        Some(ExpressionNode::Integer(10))
+                    )])),
+                    consequence
+                );
+            }
+            other => panic!("unexpected statement {other:?}"),
         }
     }
 }
