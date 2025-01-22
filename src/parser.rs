@@ -115,7 +115,7 @@ impl Parser {
                 self.expect_next_token(Token::LeftParenthesis)?;
                 let condition = match self.lexer.next() {
                     None => Err(ParseError::eof()),
-                    Some(next) => self.parse_expression(next, Precedence::Lowest),
+                    Some(next) => self.parse_expression(next),
                 }?;
                 self.expect_next_token(Token::RightParenthesis)?;
                 let consequence = match self.lexer.next() {
@@ -125,7 +125,7 @@ impl Parser {
                 Ok(StatementNode::If(condition, Box::new(consequence), None))
             }
             other => Ok(StatementNode::Expression(
-                self.parse_expression(other, Precedence::Lowest)?,
+                self.parse_expression(other)?,
             )),
         }
     }
@@ -134,13 +134,21 @@ impl Parser {
         match self.lexer.next() {
             Some(Token::Semicolon) => Ok(None),
             Some(token) => self
-                .parse_expression(token, Precedence::Lowest)
+                .parse_expression(token)
                 .map(|expr| Some(expr)),
             None => Err(ParseError::eof()),
         }
     }
 
-    fn parse_expression(
+    fn parse_expression(&mut self, token: Token) -> Result<ExpressionNode, ParseError> {
+        let expr = self.parse_expression_recursive(token, Precedence::Lowest)?;
+        if let Some(Token::Semicolon) = self.lexer.peek() {
+            self.lexer.next().unwrap();
+        }
+        Ok(expr)
+    }
+
+    fn parse_expression_recursive(
         &mut self,
         token: Token,
         precedence: Precedence,
@@ -160,7 +168,7 @@ impl Parser {
             Token::LeftParenthesis => {
                 let expr = match self.lexer.next() {
                     None => Err(ParseError::eof()),
-                    Some(next) => self.parse_expression(next, Precedence::Lowest),
+                    Some(next) => self.parse_expression_recursive(next, Precedence::Lowest),
                 }?;
                 self.expect_next_token(Token::RightParenthesis)?;
                 Ok(expr)
@@ -170,8 +178,7 @@ impl Parser {
         while let Some(peeked) = self.lexer.peek() {
             match peeked {
                 Token::Semicolon => {
-                    self.lexer.next();
-                    return Ok(expr);
+                    break;
                 },
                 _ => {
                     let other_precedence = Precedence::from_operator(&peeked);
@@ -182,7 +189,7 @@ impl Parser {
                         self.lexer.next();
                         expr = self.parse_infix_expression(peeked, expr)?;
                     } else {
-                        return Ok(expr);
+                        break;
                     }
                 }
             }
@@ -195,7 +202,7 @@ impl Parser {
             None => Err(ParseError::eof()),
             Some(expr) => Ok(ExpressionNode::Prefix(
                 operator,
-                Box::new(self.parse_expression(expr, Precedence::Prefix)?),
+                Box::new(self.parse_expression_recursive(expr, Precedence::Prefix)?),
             )),
         }
     }
@@ -210,7 +217,7 @@ impl Parser {
             Ok(ExpressionNode::Infix(
                 operator,
                 Box::new(left),
-                Box::new(self.parse_expression(next, precedence)?),
+                Box::new(self.parse_expression_recursive(next, precedence)?),
             ))
         } else {
             Err(ParseError::eof())
@@ -527,6 +534,7 @@ mod tests {
         let source = r#"
         if (a < b) {
             let c = 10;
+            11 + 11;
         }
         "#;
         let mut parser = Parser::new(Lexer::new(source.chars().collect()));
@@ -543,10 +551,15 @@ mod tests {
                     condition
                 );
                 assert_eq!(
-                    Box::new(StatementNode::Block(vec![StatementNode::Let(
-                        "c".to_string(),
-                        Some(ExpressionNode::Integer(10))
-                    )])),
+                    Box::new(StatementNode::Block(vec![
+                        StatementNode::Let(
+                            "c".to_string(),
+                            Some(ExpressionNode::Integer(10))
+                        ),
+                        StatementNode::Expression(
+                            ExpressionNode::Infix(Token::Plus, Box::new(ExpressionNode::Integer(11)), Box::new(ExpressionNode::Integer(11)))
+                        )
+                    ])),
                     consequence
                 );
             }
