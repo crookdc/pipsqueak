@@ -1,6 +1,7 @@
 use crate::lexer::{Lexer, Token};
 use std::cmp::PartialOrd;
 use std::collections::VecDeque;
+use std::fmt::format;
 
 #[derive(Debug)]
 pub struct ParseError {
@@ -124,18 +125,14 @@ impl Parser {
                 }?;
                 Ok(StatementNode::If(condition, Box::new(consequence), None))
             }
-            other => Ok(StatementNode::Expression(
-                self.parse_expression(other)?,
-            )),
+            other => Ok(StatementNode::Expression(self.parse_expression(other)?)),
         }
     }
 
     fn parse_remaining_expression(&mut self) -> Result<Option<ExpressionNode>, ParseError> {
         match self.lexer.next() {
             Some(Token::Semicolon) => Ok(None),
-            Some(token) => self
-                .parse_expression(token)
-                .map(|expr| Some(expr)),
+            Some(token) => self.parse_expression(token).map(|expr| Some(expr)),
             None => Err(ParseError::eof()),
         }
     }
@@ -179,7 +176,7 @@ impl Parser {
             match peeked {
                 Token::Semicolon => {
                     break;
-                },
+                }
                 _ => {
                     let other_precedence = Precedence::from_operator(&peeked);
                     if other_precedence.is_none() {
@@ -302,6 +299,7 @@ pub enum ExpressionNode {
     Boolean(bool),
     Prefix(Token, Box<ExpressionNode>),
     Infix(Token, Box<ExpressionNode>, Box<ExpressionNode>),
+    Function(Vec<Token>, Box<StatementNode>),
 }
 
 impl Node for ExpressionNode {
@@ -313,6 +311,18 @@ impl Node for ExpressionNode {
             ExpressionNode::Prefix(operator, left) => format!("{operator:?}{}", left.literal()),
             ExpressionNode::Infix(operator, left, right) => {
                 format!("{}{operator:?}{}", left.literal(), right.literal())
+            }
+            ExpressionNode::Function(params, body) => {
+                let params = params
+                    .iter()
+                    .map(|param| match param {
+                        Token::Identifier(name) => name.clone(),
+                        _ => panic!("invalid parameter token value {param:?}"),
+                    })
+                    .collect::<Vec<String>>()
+                    .join(", ");
+                let mut out = format!("fn({}) {}", params, body.literal());
+                out
             }
         }
     }
@@ -546,21 +556,48 @@ mod tests {
                     ExpressionNode::Infix(
                         Token::LessThan,
                         Box::new(ExpressionNode::Identifier("a".to_string())),
-                        Box::new(ExpressionNode::Identifier("b".to_string()))
+                        Box::new(ExpressionNode::Identifier("b".to_string())),
                     ),
                     condition
                 );
                 assert_eq!(
                     Box::new(StatementNode::Block(vec![
-                        StatementNode::Let(
-                            "c".to_string(),
-                            Some(ExpressionNode::Integer(10))
-                        ),
-                        StatementNode::Expression(
-                            ExpressionNode::Infix(Token::Plus, Box::new(ExpressionNode::Integer(11)), Box::new(ExpressionNode::Integer(11)))
-                        )
+                        StatementNode::Let("c".to_string(), Some(ExpressionNode::Integer(10)),),
+                        StatementNode::Expression(ExpressionNode::Infix(
+                            Token::Plus,
+                            Box::new(ExpressionNode::Integer(11)),
+                            Box::new(ExpressionNode::Integer(11))
+                        )),
                     ])),
                     consequence
+                );
+            }
+            other => panic!("unexpected statement {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_function_expression() {
+        let source = r#"
+        let sum = fn(a, b) {
+            return;
+        }
+        "#;
+        let mut parser = Parser::new(Lexer::new(source.chars().collect()));
+        let mut program = parser.parse().unwrap();
+        assert_eq!(1, program.len());
+        match program.pop().unwrap() {
+            StatementNode::Let(name, Some(ExpressionNode::Function(params, body))) => {
+                assert_eq!("sum".to_string(), name);
+                for (i, param) in vec!["a", "b"].into_iter().enumerate() {
+                    match params.get(i).unwrap() {
+                        Token::Identifier(actual) => assert_eq!(param, actual),
+                        other => panic!("unexpected parameter {other:?}"),
+                    }
+                }
+                assert_eq!(
+                    Box::new(StatementNode::Block(vec![StatementNode::Return(None)])),
+                    body
                 );
             }
             other => panic!("unexpected statement {other:?}"),
