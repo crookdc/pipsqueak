@@ -169,15 +169,15 @@ impl Parser {
                 }?;
                 self.expect_next_token(Token::RightParenthesis)?;
                 Ok(expr)
-            },
+            }
             Token::Function => {
                 let params = self.parse_parameter_list()?;
                 let body = match self.lexer.next() {
                     Some(next) => self.parse_statement(next),
-                    _ => Err(ParseError::eof())
+                    _ => Err(ParseError::eof()),
                 }?;
                 Ok(ExpressionNode::Function(params, Box::new(body)))
-            },
+            }
             _ => Err(ParseError::unrecognized_token(token)),
         }?;
         while let Some(peeked) = self.lexer.peek() {
@@ -225,7 +225,7 @@ impl Parser {
                 Some(Token::Identifier(name)) => params.push(Token::Identifier(name)),
                 Some(other) => {
                     return Err(ParseError::unrecognized_token(other));
-                },
+                }
                 None => {
                     return Err(ParseError::eof());
                 }
