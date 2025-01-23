@@ -169,7 +169,34 @@ impl Parser {
                 }?;
                 self.expect_next_token(Token::RightParenthesis)?;
                 Ok(expr)
-            }
+            },
+            Token::Function => {
+                self.expect_next_token(Token::LeftParenthesis).unwrap();
+                let mut params = vec![];
+                loop {
+                    match self.lexer.next() {
+                        Some(Token::Identifier(name)) => params.push(Token::Identifier(name)),
+                        Some(other) => {
+                            return Err(ParseError::unrecognized_token(other));
+                        },
+                        None => {
+                            return Err(ParseError::eof());
+                        }
+                    }
+                    if let Some(Token::RightParenthesis) = self.lexer.peek() {
+                        break;
+                    } else {
+                        self.expect_next_token(Token::Comma).unwrap();
+                    }
+                }
+                self.expect_next_token(Token::RightParenthesis).unwrap();
+
+                let body = match self.lexer.next() {
+                    Some(next) => self.parse_statement(next),
+                    _ => Err(ParseError::eof())
+                }?;
+                Ok(ExpressionNode::Function(params, Box::new(body)))
+            },
             _ => Err(ParseError::unrecognized_token(token)),
         }?;
         while let Some(peeked) = self.lexer.peek() {
