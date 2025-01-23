@@ -171,26 +171,7 @@ impl Parser {
                 Ok(expr)
             },
             Token::Function => {
-                self.expect_next_token(Token::LeftParenthesis).unwrap();
-                let mut params = vec![];
-                loop {
-                    match self.lexer.next() {
-                        Some(Token::Identifier(name)) => params.push(Token::Identifier(name)),
-                        Some(other) => {
-                            return Err(ParseError::unrecognized_token(other));
-                        },
-                        None => {
-                            return Err(ParseError::eof());
-                        }
-                    }
-                    if let Some(Token::RightParenthesis) = self.lexer.peek() {
-                        break;
-                    } else {
-                        self.expect_next_token(Token::Comma).unwrap();
-                    }
-                }
-                self.expect_next_token(Token::RightParenthesis).unwrap();
-
+                let params = self.parse_parameter_list()?;
                 let body = match self.lexer.next() {
                     Some(next) => self.parse_statement(next),
                     _ => Err(ParseError::eof())
@@ -229,6 +210,34 @@ impl Parser {
                 Box::new(self.parse_expression_recursive(expr, Precedence::Prefix)?),
             )),
         }
+    }
+
+    fn parse_parameter_list(&mut self) -> Result<Vec<Token>, ParseError> {
+        self.expect_next_token(Token::LeftParenthesis)?;
+        if let Some(Token::RightParenthesis) = self.lexer.peek() {
+            self.lexer.next();
+            return Ok(vec![]);
+        }
+
+        let mut params = vec![];
+        loop {
+            match self.lexer.next() {
+                Some(Token::Identifier(name)) => params.push(Token::Identifier(name)),
+                Some(other) => {
+                    return Err(ParseError::unrecognized_token(other));
+                },
+                None => {
+                    return Err(ParseError::eof());
+                }
+            }
+            if let Some(Token::RightParenthesis) = self.lexer.peek() {
+                break;
+            } else {
+                self.expect_next_token(Token::Comma)?;
+            }
+        }
+        self.expect_next_token(Token::RightParenthesis)?;
+        Ok(params)
     }
 
     fn parse_infix_expression(
@@ -622,6 +631,26 @@ mod tests {
                         other => panic!("unexpected parameter {other:?}"),
                     }
                 }
+                assert_eq!(
+                    Box::new(StatementNode::Block(vec![StatementNode::Return(None)])),
+                    body
+                );
+            }
+            other => panic!("unexpected statement {other:?}"),
+        }
+
+        let source = r#"
+        let todo = fn() {
+            return;
+        }
+        "#;
+        let mut parser = Parser::new(Lexer::new(source.chars().collect()));
+        let mut program = parser.parse().unwrap();
+        assert_eq!(1, program.len());
+        match program.pop().unwrap() {
+            StatementNode::Let(name, Some(ExpressionNode::Function(params, body))) => {
+                assert_eq!("todo".to_string(), name);
+                assert_eq!(0, params.len());
                 assert_eq!(
                     Box::new(StatementNode::Block(vec![StatementNode::Return(None)])),
                     body
