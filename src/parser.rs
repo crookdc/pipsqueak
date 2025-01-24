@@ -700,21 +700,16 @@ mod tests {
     #[test]
     fn test_parse_call_expression() {
         let source = r#"
-        let n = add(a, b + 5);
+        add(a, b + 5);
         "#;
         let mut parser = Parser::new(Lexer::new(source.chars().collect()));
         let mut program = parser.parse().unwrap();
         assert_eq!(1, program.len());
         match program.pop().unwrap() {
-            StatementNode::Let(name, Some(ExpressionNode::Call(function, arguments))) => {
-                assert_eq!("n".to_string(), name);
-                assert_eq!(
-                    Box::new(ExpressionNode::Identifier("add".to_string())),
-                    function
-                );
+            StatementNode::Expression(ExpressionNode::Call(function, arguments)) => {
                 assert_eq!(2, arguments.len());
                 match arguments.get(0).unwrap() {
-                    Some(ExpressionNode::Identifier(name)) => assert_eq!("a", name),
+                    ExpressionNode::Identifier(name) => assert_eq!("a", name),
                     other => panic!("unexpected parameter {other:?}"),
                 }
                 match arguments.get(1).unwrap() {
@@ -724,6 +719,45 @@ mod tests {
                     }
                     other => panic!("unexpected parameter {other:?}"),
                 }
+            }
+            other => panic!("unexpected statement {other:?}"),
+        }
+
+        let source = r#"
+        fn(n, m) { return a + b; } (a, b + 5);
+        "#;
+        let mut parser = Parser::new(Lexer::new(source.chars().collect()));
+        let mut program = parser.parse().unwrap();
+        assert_eq!(1, program.len());
+        match program.pop().unwrap() {
+            StatementNode::Expression(ExpressionNode::Call(function, args)) => {
+                assert_eq!(
+                    Box::new(ExpressionNode::Function(
+                        vec![
+                            Token::Identifier("n".to_string()),
+                            Token::Identifier("m".to_string())
+                        ],
+                        Box::new(StatementNode::Block(vec![StatementNode::Return(Some(
+                            ExpressionNode::Infix(
+                                Token::Plus,
+                                Box::new(ExpressionNode::Identifier("a".to_string())),
+                                Box::new(ExpressionNode::Identifier("b".to_string()))
+                            )
+                        ))]))
+                    )),
+                    function
+                );
+                assert_eq!(
+                    vec![
+                        ExpressionNode::Identifier("a".to_string()),
+                        ExpressionNode::Infix(
+                            Token::Plus,
+                            Box::new(ExpressionNode::Identifier("b".to_string())),
+                            Box::new(ExpressionNode::Integer(5))
+                        )
+                    ],
+                    args
+                );
             }
             other => panic!("unexpected statement {other:?}"),
         }
