@@ -5,6 +5,7 @@ use std::io::{BufRead, Write};
 
 mod lexer;
 mod parser;
+mod eval;
 
 fn main() {
     start_repl(&mut io::stdin().lock(), &mut io::stdout());

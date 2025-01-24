@@ -2,7 +2,6 @@ use crate::lexer::{Lexer, Token};
 use crate::parser::ExpressionNode::Call;
 use std::cmp::PartialOrd;
 use std::collections::VecDeque;
-use std::fmt::format;
 
 #[derive(Debug)]
 pub struct ParseError {
