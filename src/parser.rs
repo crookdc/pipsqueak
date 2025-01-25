@@ -122,7 +122,23 @@ impl Parser {
                     None => Err(ParseError::eof()),
                     Some(next) => self.parse_statement(next),
                 }?;
-                Ok(StatementNode::If(condition, Box::new(consequence), None))
+
+                match self.lexer.peek() {
+                    Some(Token::Else) => {
+                        self.expect_next_token(Token::Else)?;
+                        if let Some(next) = self.lexer.next() {
+                            let alternative = self.parse_statement(next)?;
+                            Ok(StatementNode::If(
+                                condition,
+                                Box::new(consequence),
+                                Some(Box::new(alternative)),
+                            ))
+                        } else {
+                            Err(ParseError::eof())
+                        }
+                    }
+                    _ => Ok(StatementNode::If(condition, Box::new(consequence), None)),
+                }
             }
             other => Ok(StatementNode::Expression(self.parse_expression(other)?)),
         }
@@ -642,6 +658,52 @@ mod tests {
                         )),
                     ])),
                     consequence
+                );
+            }
+            other => panic!("unexpected statement {other:?}"),
+        }
+    }
+
+    fn test_parse_if_else_statement() {
+        let source = r#"
+        if (a < b) {
+            11 + 11;
+        } else {
+            12 + 12;
+        }
+        "#;
+        let mut parser = Parser::new(Lexer::new(source.chars().collect()));
+        let mut program = parser.parse().unwrap();
+        assert_eq!(1, program.len());
+        match program.pop().unwrap() {
+            StatementNode::If(condition, consequence, alternative) => {
+                assert_eq!(
+                    ExpressionNode::Infix(
+                        Token::LessThan,
+                        Box::new(ExpressionNode::Identifier("a".to_string())),
+                        Box::new(ExpressionNode::Identifier("b".to_string())),
+                    ),
+                    condition
+                );
+                assert_eq!(
+                    Box::new(StatementNode::Block(vec![StatementNode::Expression(
+                        ExpressionNode::Infix(
+                            Token::Plus,
+                            Box::new(ExpressionNode::Integer(11)),
+                            Box::new(ExpressionNode::Integer(11))
+                        )
+                    ),])),
+                    consequence
+                );
+                assert_eq!(
+                    Box::new(StatementNode::Block(vec![StatementNode::Expression(
+                        ExpressionNode::Infix(
+                            Token::Plus,
+                            Box::new(ExpressionNode::Integer(12)),
+                            Box::new(ExpressionNode::Integer(12))
+                        )
+                    ),])),
+                    alternative.unwrap()
                 );
             }
             other => panic!("unexpected statement {other:?}"),
