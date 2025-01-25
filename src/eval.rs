@@ -1,7 +1,7 @@
 use crate::lexer::Token;
 use crate::parser::ExpressionNode;
 use crate::parser::StatementNode;
-use std::ops::{Add, Div, Mul, Sub};
+use std::ops::{Add, Div, Mul, Not, Sub};
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum Object {
@@ -10,8 +10,31 @@ pub enum Object {
     Boolean(bool),
 }
 
+impl Object {
+    fn less_than(self, rhs: Self) -> Result<Self, EvalError> {
+        match self {
+            Object::Integer(a) => match rhs {
+                Object::Integer(b) => Ok(Object::Boolean(a < b)),
+                other => Err(EvalError::unexpected_type(other)),
+            },
+            other => Err(EvalError::unexpected_type(other)),
+        }
+    }
+}
+
+impl Not for Object {
+    type Output = Result<Self, EvalError>;
+
+    fn not(self) -> Self::Output {
+        match self {
+            Object::Boolean(a) => Ok(Object::Boolean(!a)),
+            other => Err(EvalError::unexpected_type(other)),
+        }
+    }
+}
+
 impl Add for Object {
-    type Output = Result<Object, EvalError>;
+    type Output = Result<Self, EvalError>;
 
     fn add(self, rhs: Self) -> Self::Output {
         match self {
@@ -25,7 +48,7 @@ impl Add for Object {
 }
 
 impl Sub for Object {
-    type Output = Result<Object, EvalError>;
+    type Output = Result<Self, EvalError>;
 
     fn sub(self, rhs: Self) -> Self::Output {
         match self {
@@ -39,7 +62,7 @@ impl Sub for Object {
 }
 
 impl Mul for Object {
-    type Output = Result<Object, EvalError>;
+    type Output = Result<Self, EvalError>;
 
     fn mul(self, rhs: Self) -> Self::Output {
         match self {
@@ -53,7 +76,7 @@ impl Mul for Object {
 }
 
 impl Div for Object {
-    type Output = Result<Object, EvalError>;
+    type Output = Result<Self, EvalError>;
 
     fn div(self, rhs: Self) -> Self::Output {
         match self {
@@ -104,16 +127,10 @@ fn eval_expression(expr: ExpressionNode) -> Result<Object, EvalError> {
         ExpressionNode::Boolean(val) => Ok(Object::Boolean(val)),
         ExpressionNode::Prefix(operator, left) => {
             let left = eval_expression(*left)?;
-            match left {
-                Object::Integer(value) => match operator {
-                    Token::Minus => Ok(Object::Integer(-1 * value)),
-                    other => Err(EvalError::unexpected_operator(other)),
-                },
-                Object::Boolean(value) => match operator {
-                    Token::Bang => Ok(Object::Boolean(!value)),
-                    other => Err(EvalError::unexpected_operator(other)),
-                },
-                other => Err(EvalError::unexpected_type(other)),
+            match operator {
+                Token::Minus => Object::Integer(-1) * left,
+                Token::Bang => !left,
+                other => Err(EvalError::unexpected_operator(other)),
             }
         }
         ExpressionNode::Infix(operator, left, right) => {
@@ -124,6 +141,8 @@ fn eval_expression(expr: ExpressionNode) -> Result<Object, EvalError> {
                 Token::Minus => left - right,
                 Token::Asterisk => left * right,
                 Token::Slash => left / right,
+                Token::LessThan => left.less_than(right),
+                Token::GreaterThan => right.less_than(left),
                 _ => todo!(),
             }
         }
@@ -220,6 +239,22 @@ mod tests {
                     Box::new(ExpressionNode::Integer(2)),
                 )),
                 Object::Integer(5),
+            ),
+            (
+                StatementNode::Expression(ExpressionNode::Infix(
+                    Token::LessThan,
+                    Box::new(ExpressionNode::Integer(10)),
+                    Box::new(ExpressionNode::Integer(2)),
+                )),
+                Object::Boolean(false),
+            ),
+            (
+                StatementNode::Expression(ExpressionNode::Infix(
+                    Token::GreaterThan,
+                    Box::new(ExpressionNode::Integer(10)),
+                    Box::new(ExpressionNode::Integer(2)),
+                )),
+                Object::Boolean(true),
             ),
         ];
         for assert in assertions {
