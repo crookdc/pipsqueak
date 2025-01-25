@@ -143,6 +143,7 @@ fn eval_expression(expr: ExpressionNode) -> Result<Object, EvalError> {
                 Token::Slash => left / right,
                 Token::LessThan => left.less_than(right),
                 Token::GreaterThan => right.less_than(left),
+                Token::Equals => Ok(Object::Boolean(left == right)),
                 _ => todo!(),
             }
         }
@@ -253,6 +254,46 @@ mod tests {
                     Token::GreaterThan,
                     Box::new(ExpressionNode::Integer(10)),
                     Box::new(ExpressionNode::Integer(2)),
+                )),
+                Object::Boolean(true),
+            ),
+            (
+                StatementNode::Expression(ExpressionNode::Infix(
+                    Token::Equals,
+                    Box::new(ExpressionNode::Integer(10)),
+                    Box::new(ExpressionNode::Integer(2)),
+                )),
+                Object::Boolean(false),
+            ),
+            (
+                StatementNode::Expression(ExpressionNode::Infix(
+                    Token::Equals,
+                    Box::new(ExpressionNode::Integer(10)),
+                    Box::new(ExpressionNode::Boolean(true)),
+                )),
+                Object::Boolean(false),
+            ),
+            (
+                StatementNode::Expression(ExpressionNode::Infix(
+                    Token::Equals,
+                    Box::new(ExpressionNode::Boolean(true)),
+                    Box::new(ExpressionNode::Boolean(true)),
+                )),
+                Object::Boolean(true),
+            ),
+            (
+                StatementNode::Expression(ExpressionNode::Infix(
+                    Token::Equals,
+                    Box::new(ExpressionNode::Boolean(false)),
+                    Box::new(ExpressionNode::Boolean(false)),
+                )),
+                Object::Boolean(true),
+            ),
+            (
+                StatementNode::Expression(ExpressionNode::Infix(
+                    Token::Equals,
+                    Box::new(ExpressionNode::Integer(10)),
+                    Box::new(ExpressionNode::Integer(10)),
                 )),
                 Object::Boolean(true),
             ),
