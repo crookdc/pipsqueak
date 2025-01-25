@@ -116,6 +116,20 @@ impl EvalError {
 
 pub fn eval(stmt: StatementNode) -> Result<Object, EvalError> {
     match stmt {
+        StatementNode::If(condition, consequence, alternative) => {
+            match eval_expression(condition)? {
+                Object::Boolean(val) => {
+                    if val {
+                        eval(*consequence)
+                    } else if let Some(alt) = alternative {
+                        eval(*alt)
+                    } else {
+                        Ok(Object::Nil)
+                    }
+                }
+                other => Err(EvalError::unexpected_type(other)),
+            }
+        }
         StatementNode::Expression(expr) => eval_expression(expr),
         _ => todo!(),
     }
@@ -144,7 +158,8 @@ fn eval_expression(expr: ExpressionNode) -> Result<Object, EvalError> {
                 Token::LessThan => left.less_than(right),
                 Token::GreaterThan => right.less_than(left),
                 Token::Equals => Ok(Object::Boolean(left == right)),
-                _ => todo!(),
+                Token::NotEquals => Ok(Object::Boolean(left != right)),
+                _ => Err(EvalError::unexpected_operator(operator)),
             }
         }
         _ => todo!(),

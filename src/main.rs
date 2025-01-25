@@ -23,7 +23,7 @@ pub fn start_repl(input: &mut impl BufRead, output: &mut impl Write) {
         let mut parser = Parser::new(Lexer::new(cmd.chars().collect()));
         let mut program = parser.parse().unwrap();
         while let Some(stmt) = program.pop() {
-            writeln!(output, "{}", stmt.literal()).unwrap();
+            writeln!(output, "{:?}", eval::eval(stmt)).unwrap();
         }
     }
 }
