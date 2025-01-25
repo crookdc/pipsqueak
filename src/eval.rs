@@ -1,9 +1,6 @@
 use crate::lexer::Token;
 use crate::parser::ExpressionNode;
 use crate::parser::StatementNode;
-use std::any::type_name_of_val;
-use std::fmt::format;
-use std::mem;
 use std::ops::Add;
 
 #[derive(Debug, Eq, PartialEq)]
@@ -11,6 +8,20 @@ pub enum Object {
     Nil,
     Integer(i32),
     Boolean(bool),
+}
+
+impl Add for Object {
+    type Output = Result<Object, EvalError>;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        match self {
+            Object::Integer(a) => match rhs {
+                Object::Integer(b) => Ok(Object::Integer(a + b)),
+                other => Err(EvalError::unexpected_type(other)),
+            },
+            other => Err(EvalError::unexpected_type(other)),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -67,18 +78,8 @@ fn eval_expression(expr: ExpressionNode) -> Result<Object, EvalError> {
             let left = eval_expression(*left)?;
             let right = eval_expression(*right)?;
             match operator {
-                Token::Plus => {
-                    if let Object::Integer(a) = left {
-                        if let Object::Integer(b) = right {
-                            Ok(Object::Integer(a + b))
-                        } else {
-                            Err(EvalError::mixed_operands(left, right))
-                        }
-                    } else {
-                        Err(EvalError::unexpected_type(left))
-                    }
-                },
-                _ => todo!()
+                Token::Plus => left + right,
+                _ => todo!(),
             }
         }
         _ => todo!(),
@@ -137,7 +138,10 @@ mod tests {
             StatementNode::Expression(ExpressionNode::Infix(
                 Token::Plus,
                 Box::new(ExpressionNode::Integer(10)),
-                Box::new(ExpressionNode::Prefix(Token::Minus, Box::new(ExpressionNode::Integer(20)))),
+                Box::new(ExpressionNode::Prefix(
+                    Token::Minus,
+                    Box::new(ExpressionNode::Integer(20)),
+                )),
             )),
             Object::Integer(-10),
         )];
