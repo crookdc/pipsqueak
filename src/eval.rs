@@ -1,7 +1,7 @@
 use crate::lexer::Token;
 use crate::parser::ExpressionNode;
 use crate::parser::StatementNode;
-use std::ops::{Add, Sub};
+use std::ops::{Add, Mul, Sub};
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum Object {
@@ -31,6 +31,20 @@ impl Sub for Object {
         match self {
             Object::Integer(a) => match rhs {
                 Object::Integer(b) => Ok(Object::Integer(a - b)),
+                other => Err(EvalError::unexpected_type(other)),
+            },
+            other => Err(EvalError::unexpected_type(other)),
+        }
+    }
+}
+
+impl Mul for Object {
+    type Output = Result<Object, EvalError>;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        match self {
+            Object::Integer(a) => match rhs {
+                Object::Integer(b) => Ok(Object::Integer(a * b)),
                 other => Err(EvalError::unexpected_type(other)),
             },
             other => Err(EvalError::unexpected_type(other)),
@@ -94,6 +108,7 @@ fn eval_expression(expr: ExpressionNode) -> Result<Object, EvalError> {
             match operator {
                 Token::Plus => left + right,
                 Token::Minus => left - right,
+                Token::Asterisk => left * right,
                 _ => todo!(),
             }
         }
@@ -171,6 +186,17 @@ mod tests {
                     )),
                 )),
                 Object::Integer(25),
+            ),
+            (
+                StatementNode::Expression(ExpressionNode::Infix(
+                    Token::Asterisk,
+                    Box::new(ExpressionNode::Integer(10)),
+                    Box::new(ExpressionNode::Prefix(
+                        Token::Minus,
+                        Box::new(ExpressionNode::Integer(10)),
+                    )),
+                )),
+                Object::Integer(-100),
             ),
         ];
         for assert in assertions {
