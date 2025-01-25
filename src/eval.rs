@@ -1,7 +1,7 @@
 use crate::lexer::Token;
 use crate::parser::ExpressionNode;
 use crate::parser::StatementNode;
-use std::ops::Add;
+use std::ops::{Add, Sub};
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum Object {
@@ -17,6 +17,20 @@ impl Add for Object {
         match self {
             Object::Integer(a) => match rhs {
                 Object::Integer(b) => Ok(Object::Integer(a + b)),
+                other => Err(EvalError::unexpected_type(other)),
+            },
+            other => Err(EvalError::unexpected_type(other)),
+        }
+    }
+}
+
+impl Sub for Object {
+    type Output = Result<Object, EvalError>;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        match self {
+            Object::Integer(a) => match rhs {
+                Object::Integer(b) => Ok(Object::Integer(a - b)),
                 other => Err(EvalError::unexpected_type(other)),
             },
             other => Err(EvalError::unexpected_type(other)),
@@ -79,6 +93,7 @@ fn eval_expression(expr: ExpressionNode) -> Result<Object, EvalError> {
             let right = eval_expression(*right)?;
             match operator {
                 Token::Plus => left + right,
+                Token::Minus => left - right,
                 _ => todo!(),
             }
         }
@@ -134,17 +149,30 @@ mod tests {
 
     #[test]
     fn test_infix_expression_eval() {
-        let assertions = vec![(
-            StatementNode::Expression(ExpressionNode::Infix(
-                Token::Plus,
-                Box::new(ExpressionNode::Integer(10)),
-                Box::new(ExpressionNode::Prefix(
-                    Token::Minus,
-                    Box::new(ExpressionNode::Integer(20)),
+        let assertions = vec![
+            (
+                StatementNode::Expression(ExpressionNode::Infix(
+                    Token::Plus,
+                    Box::new(ExpressionNode::Integer(10)),
+                    Box::new(ExpressionNode::Prefix(
+                        Token::Minus,
+                        Box::new(ExpressionNode::Integer(20)),
+                    )),
                 )),
-            )),
-            Object::Integer(-10),
-        )];
+                Object::Integer(-10),
+            ),
+            (
+                StatementNode::Expression(ExpressionNode::Infix(
+                    Token::Minus,
+                    Box::new(ExpressionNode::Integer(15)),
+                    Box::new(ExpressionNode::Prefix(
+                        Token::Minus,
+                        Box::new(ExpressionNode::Integer(10)),
+                    )),
+                )),
+                Object::Integer(25),
+            ),
+        ];
         for assert in assertions {
             let actual = eval(assert.0).unwrap();
             assert_eq!(assert.1, actual);
