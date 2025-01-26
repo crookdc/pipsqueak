@@ -130,8 +130,15 @@ pub fn eval(stmt: StatementNode) -> Result<Object, EvalError> {
                 other => Err(EvalError::unexpected_type(other)),
             }
         }
+        StatementNode::Block(stmts) => {
+            let mut out = Object::Nil;
+            for s in stmts {
+                out = eval(s)?;
+            }
+            Ok(out)
+        }
         StatementNode::Expression(expr) => eval_expression(expr),
-        _ => todo!(),
+        other => panic!("{other:?} evaluation not yet supported"),
     }
 }
 
