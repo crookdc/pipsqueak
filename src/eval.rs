@@ -1,9 +1,30 @@
 use crate::lexer::Token;
 use crate::parser::ExpressionNode;
 use crate::parser::StatementNode;
+use std::collections::HashMap;
 use std::ops::{Add, Div, Mul, Not, Sub};
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug)]
+pub struct Environment(HashMap<String, Object>);
+
+impl Environment {
+    pub fn new() -> Self {
+        Self(HashMap::new())
+    }
+
+    fn get(&self, name: &String) -> Object {
+        match self.0.get(name) {
+            None => Object::Nil,
+            Some(value) => value.clone(),
+        }
+    }
+
+    fn set(&mut self, name: String, value: Object) {
+        self.0.insert(name, value);
+    }
+}
+
+#[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub enum Object {
     Nil,
     Integer(i32),
@@ -114,62 +135,86 @@ impl EvalError {
     }
 }
 
-pub fn eval(stmt: StatementNode) -> Result<Object, EvalError> {
-    match stmt {
-        StatementNode::If(condition, consequence, alternative) => {
-            match eval_expression(condition)? {
-                Object::Boolean(val) => {
-                    if val {
-                        eval(*consequence)
-                    } else if let Some(alt) = alternative {
-                        eval(*alt)
-                    } else {
-                        Ok(Object::Nil)
-                    }
-                }
-                other => Err(EvalError::unexpected_type(other)),
-            }
-        }
-        StatementNode::Block(stmts) => {
-            let mut out = Object::Nil;
-            for s in stmts {
-                out = eval(s)?;
-            }
-            Ok(out)
-        }
-        StatementNode::Expression(expr) => eval_expression(expr),
-        other => panic!("{other:?} evaluation not yet supported"),
-    }
+pub struct Evaluator {
+    env: Environment,
 }
 
-fn eval_expression(expr: ExpressionNode) -> Result<Object, EvalError> {
-    match expr {
-        ExpressionNode::Integer(val) => Ok(Object::Integer(val)),
-        ExpressionNode::Boolean(val) => Ok(Object::Boolean(val)),
-        ExpressionNode::Prefix(operator, left) => {
-            let left = eval_expression(*left)?;
-            match operator {
-                Token::Minus => Object::Integer(-1) * left,
-                Token::Bang => !left,
-                other => Err(EvalError::unexpected_operator(other)),
-            }
+impl Evaluator {
+    pub fn new() -> Self {
+        Self {
+            env: Environment::new(),
         }
-        ExpressionNode::Infix(operator, left, right) => {
-            let left = eval_expression(*left)?;
-            let right = eval_expression(*right)?;
-            match operator {
-                Token::Plus => left + right,
-                Token::Minus => left - right,
-                Token::Asterisk => left * right,
-                Token::Slash => left / right,
-                Token::LessThan => left.less_than(right),
-                Token::GreaterThan => right.less_than(left),
-                Token::Equals => Ok(Object::Boolean(left == right)),
-                Token::NotEquals => Ok(Object::Boolean(left != right)),
-                _ => Err(EvalError::unexpected_operator(operator)),
+    }
+
+    pub fn eval(&mut self, stmt: StatementNode) -> Result<Object, EvalError> {
+        match stmt {
+            StatementNode::Let(name, expr) => {
+                let value = match expr {
+                    None => Ok(Object::Nil),
+                    Some(expr) => self.eval_expression(expr),
+                }?;
+                self.env.set(name, value);
+                Ok(Object::Nil)
             }
+            StatementNode::If(condition, consequence, alternative) => {
+                match self.eval_expression(condition)? {
+                    Object::Boolean(val) => {
+                        if val {
+                            self.eval(*consequence)
+                        } else if let Some(alt) = alternative {
+                            self.eval(*alt)
+                        } else {
+                            Ok(Object::Nil)
+                        }
+                    }
+                    other => Err(EvalError::unexpected_type(other)),
+                }
+            }
+            StatementNode::Block(stmts) => {
+                let mut out = Object::Nil;
+                for s in stmts {
+                    out = self.eval(s)?;
+                }
+                Ok(out)
+            }
+            StatementNode::Return(expr) => match expr {
+                None => Ok(Object::Nil),
+                Some(expr) => self.eval_expression(expr),
+            },
+            StatementNode::Expression(expr) => self.eval_expression(expr),
         }
-        _ => todo!(),
+    }
+
+    fn eval_expression(&self, expr: ExpressionNode) -> Result<Object, EvalError> {
+        match expr {
+            ExpressionNode::Identifier(val) => Ok(self.env.get(&val)),
+            ExpressionNode::Integer(val) => Ok(Object::Integer(val)),
+            ExpressionNode::Boolean(val) => Ok(Object::Boolean(val)),
+            ExpressionNode::Prefix(operator, left) => {
+                let left = self.eval_expression(*left)?;
+                match operator {
+                    Token::Minus => Object::Integer(-1) * left,
+                    Token::Bang => !left,
+                    other => Err(EvalError::unexpected_operator(other)),
+                }
+            }
+            ExpressionNode::Infix(operator, left, right) => {
+                let left = self.eval_expression(*left)?;
+                let right = self.eval_expression(*right)?;
+                match operator {
+                    Token::Plus => left + right,
+                    Token::Minus => left - right,
+                    Token::Asterisk => left * right,
+                    Token::Slash => left / right,
+                    Token::LessThan => left.less_than(right),
+                    Token::GreaterThan => right.less_than(left),
+                    Token::Equals => Ok(Object::Boolean(left == right)),
+                    Token::NotEquals => Ok(Object::Boolean(left != right)),
+                    _ => Err(EvalError::unexpected_operator(operator)),
+                }
+            }
+            _ => todo!(),
+        }
     }
 }
 
@@ -189,8 +234,9 @@ mod tests {
                 Object::Integer(10),
             ),
         ];
+        let mut evaluator = Evaluator::new();
         for assert in assertions {
-            let actual = eval(assert.0).unwrap();
+            let actual = evaluator.eval(assert.0).unwrap();
             assert_eq!(assert.1, actual);
         }
     }
@@ -213,8 +259,9 @@ mod tests {
                 Object::Boolean(false),
             ),
         ];
+        let mut evaluator = Evaluator::new();
         for assert in assertions {
-            let actual = eval(assert.0).unwrap();
+            let actual = evaluator.eval(assert.0).unwrap();
             assert_eq!(assert.1, actual);
         }
     }
@@ -320,8 +367,9 @@ mod tests {
                 Object::Boolean(true),
             ),
         ];
+        let mut evaluator = Evaluator::new();
         for assert in assertions {
-            let actual = eval(assert.0).unwrap();
+            let actual = evaluator.eval(assert.0).unwrap();
             assert_eq!(assert.1, actual);
         }
     }
@@ -351,8 +399,31 @@ mod tests {
                 Object::Boolean(false),
             ),
         ];
+        let mut evaluator = Evaluator::new();
         for assert in assertions {
-            let out = eval(StatementNode::Block(assert.0)).unwrap();
+            let out = evaluator.eval(StatementNode::Block(assert.0)).unwrap();
+            assert_eq!(assert.1, out);
+        }
+    }
+
+    #[test]
+    fn test_return_statement_eval() {
+        let assertions = vec![
+            (None, Object::Nil),
+            (Some(ExpressionNode::Integer(5)), Object::Integer(5)),
+            (Some(ExpressionNode::Boolean(true)), Object::Boolean(true)),
+            (
+                Some(ExpressionNode::Infix(
+                    Token::Asterisk,
+                    Box::new(ExpressionNode::Integer(5)),
+                    Box::new(ExpressionNode::Integer(10)),
+                )),
+                Object::Integer(50),
+            ),
+        ];
+        let mut evaluator = Evaluator::new();
+        for assert in assertions {
+            let out = evaluator.eval(StatementNode::Return(assert.0)).unwrap();
             assert_eq!(assert.1, out);
         }
     }
