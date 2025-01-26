@@ -1,34 +1,75 @@
 use crate::lexer::Token;
 use crate::parser::ExpressionNode;
 use crate::parser::StatementNode;
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ops::{Add, Div, Mul, Not, Sub};
+use std::rc::Rc;
 
-#[derive(Debug)]
-pub struct Environment(HashMap<String, Object>);
+pub trait Environment {
+    fn get(&self, name: &String) -> Object;
+    fn set(&mut self, name: String, value: Object);
+}
 
-impl Environment {
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct BaseEnvironment {
+    mem: HashMap<String, Object>,
+}
+
+impl BaseEnvironment {
     pub fn new() -> Self {
-        Self(HashMap::new())
+        Self {
+            mem: HashMap::new(),
+        }
     }
+}
 
+impl Environment for BaseEnvironment {
     fn get(&self, name: &String) -> Object {
-        match self.0.get(name) {
+        match self.mem.get(name) {
             None => Object::Nil,
             Some(value) => value.clone(),
         }
     }
 
     fn set(&mut self, name: String, value: Object) {
-        self.0.insert(name, value);
+        self.mem.insert(name, value);
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Copy, Clone)]
+pub struct ChildEnvironment {
+    parent: Rc<RefCell<dyn Environment>>,
+    mem: HashMap<String, Object>,
+}
+
+impl ChildEnvironment {
+    fn new(parent: Rc<RefCell<dyn Environment>>) -> Self {
+        Self {
+            parent,
+            mem: HashMap::new(),
+        }
+    }
+}
+
+impl Environment for ChildEnvironment {
+    fn get(&self, name: &String) -> Object {
+        match self.mem.get(name) {
+            None => self.parent.borrow().get(name),
+            Some(value) => value.clone(),
+        }
+    }
+
+    fn set(&mut self, name: String, value: Object) {
+        self.mem.insert(name, value);
+    }
+}
+
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub enum Object {
     Nil,
     Integer(i32),
     Boolean(bool),
+    Function(Vec<Token>, StatementNode),
 }
 
 impl Object {
@@ -116,15 +157,21 @@ pub struct EvalError {
 }
 
 impl EvalError {
+    fn new(msg: &str) -> Self {
+        Self {
+            msg: msg.to_string(),
+        }
+    }
+
     fn unexpected_type(object: Object) -> EvalError {
         Self {
             msg: format!("unexpected type {object:?}"),
         }
     }
 
-    fn unexpected_operator(token: Token) -> EvalError {
+    fn unexpected_token(token: Token) -> EvalError {
         Self {
-            msg: format!("unexpected operator {token:?}"),
+            msg: format!("unexpected token {token:?}"),
         }
     }
 
@@ -136,13 +183,13 @@ impl EvalError {
 }
 
 pub struct Evaluator {
-    env: Environment,
+    env: Rc<RefCell<dyn Environment>>,
 }
 
 impl Evaluator {
     pub fn new() -> Self {
         Self {
-            env: Environment::new(),
+            env: Rc::new(RefCell::new(BaseEnvironment::new())),
         }
     }
 
@@ -153,7 +200,7 @@ impl Evaluator {
                     None => Ok(Object::Nil),
                     Some(expr) => self.eval_expression(expr),
                 }?;
-                self.env.set(name, value);
+                self.env.borrow_mut().set(name, value);
                 Ok(Object::Nil)
             }
             StatementNode::If(condition, consequence, alternative) => {
@@ -187,7 +234,7 @@ impl Evaluator {
 
     fn eval_expression(&self, expr: ExpressionNode) -> Result<Object, EvalError> {
         match expr {
-            ExpressionNode::Identifier(val) => Ok(self.env.get(&val)),
+            ExpressionNode::Identifier(val) => Ok(self.env.borrow().get(&val)),
             ExpressionNode::Integer(val) => Ok(Object::Integer(val)),
             ExpressionNode::Boolean(val) => Ok(Object::Boolean(val)),
             ExpressionNode::Prefix(operator, left) => {
@@ -195,7 +242,7 @@ impl Evaluator {
                 match operator {
                     Token::Minus => Object::Integer(-1) * left,
                     Token::Bang => !left,
-                    other => Err(EvalError::unexpected_operator(other)),
+                    other => Err(EvalError::unexpected_token(other)),
                 }
             }
             ExpressionNode::Infix(operator, left, right) => {
@@ -210,10 +257,34 @@ impl Evaluator {
                     Token::GreaterThan => right.less_than(left),
                     Token::Equals => Ok(Object::Boolean(left == right)),
                     Token::NotEquals => Ok(Object::Boolean(left != right)),
-                    _ => Err(EvalError::unexpected_operator(operator)),
+                    _ => Err(EvalError::unexpected_token(operator)),
                 }
             }
-            _ => todo!(),
+            ExpressionNode::Function(params, body) => {
+                Ok(Object::Function(params, body.as_ref().clone()))
+            }
+            ExpressionNode::Call(function, args) => {
+                let args: Vec<Object> = args
+                    .into_iter()
+                    .map(|expr| self.eval_expression(expr).unwrap())
+                    .collect();
+                if let Object::Function(params, body) = self.eval_expression(*function)? {
+                    let mut scope = ChildEnvironment::new(self.env.clone());
+                    for (i, param) in params.iter().enumerate() {
+                        if let Token::Identifier(name) = param {
+                            scope.set(name.clone(), args[i].clone())
+                        } else {
+                            return Err(EvalError::unexpected_token(param.clone()));
+                        }
+                    }
+                    Ok(Self {
+                        env: Rc::new(RefCell::new(scope)),
+                    }
+                    .eval(body)?)
+                } else {
+                    Err(EvalError::new("invalid function expression"))
+                }
+            }
         }
     }
 }

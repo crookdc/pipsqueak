@@ -329,7 +329,7 @@ pub trait Node {
     fn literal(&self) -> String;
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub enum StatementNode {
     Let(String, Option<ExpressionNode>),
     Return(Option<ExpressionNode>),
@@ -372,7 +372,7 @@ impl Node for StatementNode {
     }
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub enum ExpressionNode {
     Identifier(String),
     Integer(i32),
