@@ -325,4 +325,35 @@ mod tests {
             assert_eq!(assert.1, actual);
         }
     }
+
+    #[test]
+    fn test_block_statement_eval() {
+        let assertions = vec![
+            (vec![], Object::Nil),
+            (
+                vec![StatementNode::Expression(ExpressionNode::Infix(
+                    Token::Plus,
+                    Box::new(ExpressionNode::Integer(10)),
+                    Box::new(ExpressionNode::Integer(20)),
+                ))],
+                Object::Integer(30),
+            ),
+            (
+                vec![StatementNode::Expression(ExpressionNode::Integer(-110))],
+                Object::Integer(-110),
+            ),
+            (
+                vec![StatementNode::Expression(ExpressionNode::Infix(
+                    Token::Equals,
+                    Box::new(ExpressionNode::Boolean(true)),
+                    Box::new(ExpressionNode::Boolean(false)),
+                ))],
+                Object::Boolean(false),
+            ),
+        ];
+        for assert in assertions {
+            let out = eval(StatementNode::Block(assert.0)).unwrap();
+            assert_eq!(assert.1, out);
+        }
+    }
 }
