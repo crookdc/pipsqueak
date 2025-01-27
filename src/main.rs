@@ -3,10 +3,10 @@ use crate::parser::Parser;
 use std::io;
 use std::io::{BufRead, Write};
 
+mod builtin;
 mod eval;
 mod lexer;
 mod parser;
-mod builtin;
 
 fn main() {
     start_repl(&mut io::stdin().lock(), &mut io::stdout());
@@ -25,7 +25,7 @@ pub fn start_repl(input: &mut impl BufRead, output: &mut impl Write) {
         let mut parser = Parser::new(Lexer::new(cmd.chars().collect()));
         let mut program = parser.parse().unwrap();
         while let Some(stmt) = program.pop() {
-            writeln!(output, "{:?}", evaluator.eval(stmt)).unwrap();
+            evaluator.eval(stmt).unwrap();
         }
     }
 }

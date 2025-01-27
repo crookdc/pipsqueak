@@ -1,5 +1,6 @@
 use crate::lexer::{Lexer, Token};
 use crate::parser::ExpressionNode::Call;
+use crate::parser::StatementNode::While;
 use std::cmp::PartialOrd;
 use std::collections::VecDeque;
 
@@ -140,6 +141,19 @@ impl Parser {
                     _ => Ok(StatementNode::If(condition, Box::new(consequence), None)),
                 }
             }
+            Token::While => {
+                self.expect_next_token(Token::LeftParenthesis)?;
+                let condition = match self.lexer.next() {
+                    None => Err(ParseError::eof()),
+                    Some(next) => self.parse_expression(next),
+                }?;
+                self.expect_next_token(Token::RightParenthesis)?;
+                let body = match self.lexer.next() {
+                    None => Err(ParseError::eof()),
+                    Some(next) => self.parse_statement(next),
+                }?;
+                Ok(While(condition, Box::new(body)))
+            }
             other => Ok(StatementNode::Expression(self.parse_expression(other)?)),
         }
     }
@@ -170,7 +184,7 @@ impl Parser {
             Token::IntegerLiteral(value) => {
                 let parsed = value
                     .parse::<i32>()
-                    .map_err(|err| ParseError::malformed(value.as_str()))?;
+                    .map_err(|_| ParseError::malformed(value.as_str()))?;
                 Ok(ExpressionNode::Integer(parsed))
             }
             Token::StringLiteral(value) => Ok(ExpressionNode::String(value)),
@@ -341,6 +355,7 @@ pub enum StatementNode {
         Box<StatementNode>,
         Option<Box<StatementNode>>,
     ),
+    While(ExpressionNode, Box<StatementNode>),
 }
 
 impl Node for StatementNode {
@@ -368,6 +383,9 @@ impl Node for StatementNode {
             }
             StatementNode::If(condition, consequence, alternative) => {
                 format!("if {condition:?} then {consequence:?} else {alternative:?}")
+            }
+            StatementNode::While(condition, body) => {
+                format!("while {condition:?} then {body:?}")
             }
         }
     }
@@ -770,7 +788,7 @@ mod tests {
         let mut program = parser.parse().unwrap();
         assert_eq!(1, program.len());
         match program.pop().unwrap() {
-            StatementNode::Expression(ExpressionNode::Call(function, arguments)) => {
+            StatementNode::Expression(ExpressionNode::Call(_, arguments)) => {
                 assert_eq!(2, arguments.len());
                 match arguments.get(0).unwrap() {
                     ExpressionNode::Identifier(name) => assert_eq!("a", name),

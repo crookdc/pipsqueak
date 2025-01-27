@@ -226,6 +226,13 @@ impl Evaluator {
                     other => Err(EvalError::unexpected_type(other)),
                 }
             }
+            StatementNode::While(condition, body) => {
+                // TODO: Sort out a way to not have to clone these just to reuse them in each iteration of the loop
+                while let Object::Boolean(true) = self.eval_expression(condition.clone())? {
+                    self.eval(*body.clone())?;
+                }
+                Ok(Object::Nil)
+            }
             StatementNode::Block(stmts) => {
                 let mut out = Object::Nil;
                 for s in stmts {
