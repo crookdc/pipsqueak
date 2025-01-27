@@ -68,6 +68,7 @@ impl Environment for ChildEnvironment {
 pub enum Object {
     Nil,
     Integer(i32),
+    String(String),
     Boolean(bool),
     Function(Vec<Token>, StatementNode),
 }
@@ -102,6 +103,10 @@ impl Add for Object {
         match self {
             Object::Integer(a) => match rhs {
                 Object::Integer(b) => Ok(Object::Integer(a + b)),
+                other => Err(EvalError::unexpected_type(other)),
+            },
+            Object::String(a) => match rhs {
+                Object::String(b) => Ok(Object::String(a + b.as_str())),
                 other => Err(EvalError::unexpected_type(other)),
             },
             other => Err(EvalError::unexpected_type(other)),
@@ -236,6 +241,7 @@ impl Evaluator {
         match expr {
             ExpressionNode::Identifier(val) => Ok(self.env.borrow().get(&val)),
             ExpressionNode::Integer(val) => Ok(Object::Integer(val)),
+            ExpressionNode::String(val) => Ok(Object::String(val)),
             ExpressionNode::Boolean(val) => Ok(Object::Boolean(val)),
             ExpressionNode::Prefix(operator, left) => {
                 let left = self.eval_expression(*left)?;
@@ -263,16 +269,12 @@ impl Evaluator {
             ExpressionNode::Function(params, body) => {
                 Ok(Object::Function(params, body.as_ref().clone()))
             }
-            ExpressionNode::Call(function, args) => {
-                let args: Vec<Object> = args
-                    .into_iter()
-                    .map(|expr| self.eval_expression(expr).unwrap())
-                    .collect();
+            ExpressionNode::Call(function, mut args) => {
                 if let Object::Function(params, body) = self.eval_expression(*function)? {
                     let mut scope = ChildEnvironment::new(self.env.clone());
-                    for (i, param) in params.iter().enumerate() {
+                    for param in params.iter() {
                         if let Token::Identifier(name) = param {
-                            scope.set(name.clone(), args[i].clone())
+                            scope.set(name.clone(), self.eval_expression(args.pop().unwrap())?)
                         } else {
                             return Err(EvalError::unexpected_token(param.clone()));
                         }

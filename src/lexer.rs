@@ -4,8 +4,9 @@ pub enum Token {
     Eof,
     Identifier(String),
     IntegerLiteral(String),
-    True,
-    False,
+    StringLiteral(String),
+    TrueLiteral,
+    FalseLiteral,
     If,
     LessThan,
     GreaterThan,
@@ -37,8 +38,8 @@ impl Token {
             "if" => Some(Token::If),
             "else" => Some(Token::Else),
             "return" => Some(Token::Return),
-            "true" => Some(Token::True),
-            "false" => Some(Token::False),
+            "true" => Some(Token::TrueLiteral),
+            "false" => Some(Token::FalseLiteral),
             _ => None,
         }
     }
@@ -134,6 +135,14 @@ impl Iterator for Lexer {
             '{' => Token::LeftCurlyBrace,
             '}' => Token::RightCurlyBrace,
             '\0' => Token::Eof,
+            '"' => {
+                self.index += 1;
+                let start = self.index;
+                while self.source[self.index] != '"' && self.source[self.index] != '\0' {
+                    self.index += 1;
+                }
+                Token::StringLiteral(self.source[start..self.index].into_iter().collect())
+            }
             _ => {
                 if Self::valid_identifier(character) {
                     let word = self.next_word();
@@ -223,13 +232,13 @@ mod tests {
             Token::RightParenthesis,
             Token::LeftCurlyBrace,
             Token::Return,
-            Token::True,
+            Token::TrueLiteral,
             Token::Semicolon,
             Token::RightCurlyBrace,
             Token::Else,
             Token::LeftCurlyBrace,
             Token::Return,
-            Token::False,
+            Token::FalseLiteral,
             Token::Semicolon,
             Token::RightCurlyBrace,
             Token::IntegerLiteral("10".to_string()),

@@ -173,8 +173,9 @@ impl Parser {
                     .map_err(|err| ParseError::malformed(value.as_str()))?;
                 Ok(ExpressionNode::Integer(parsed))
             }
-            Token::True => Ok(ExpressionNode::Boolean(true)),
-            Token::False => Ok(ExpressionNode::Boolean(false)),
+            Token::StringLiteral(value) => Ok(ExpressionNode::String(value)),
+            Token::TrueLiteral => Ok(ExpressionNode::Boolean(true)),
+            Token::FalseLiteral => Ok(ExpressionNode::Boolean(false)),
             Token::Bang => self.parse_prefix_expression(Token::Bang),
             Token::Minus => self.parse_prefix_expression(Token::Minus),
             Token::LeftParenthesis => {
@@ -376,6 +377,7 @@ impl Node for StatementNode {
 pub enum ExpressionNode {
     Identifier(String),
     Integer(i32),
+    String(String),
     Boolean(bool),
     Prefix(Token, Box<ExpressionNode>),
     Infix(Token, Box<ExpressionNode>, Box<ExpressionNode>),
@@ -388,6 +390,7 @@ impl Node for ExpressionNode {
         match self {
             ExpressionNode::Identifier(name) => name.clone(),
             ExpressionNode::Integer(value) => value.to_string(),
+            ExpressionNode::String(value) => value.clone(),
             ExpressionNode::Boolean(value) => value.to_string(),
             ExpressionNode::Prefix(operator, left) => format!("{operator:?}{}", left.literal()),
             ExpressionNode::Infix(operator, left, right) => {
