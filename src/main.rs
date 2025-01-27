@@ -6,6 +6,7 @@ use std::io::{BufRead, Write};
 mod eval;
 mod lexer;
 mod parser;
+mod builtin;
 
 fn main() {
     start_repl(&mut io::stdin().lock(), &mut io::stdout());

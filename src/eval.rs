@@ -1,3 +1,4 @@
+use crate::builtin;
 use crate::lexer::Token;
 use crate::parser::ExpressionNode;
 use crate::parser::StatementNode;
@@ -18,9 +19,11 @@ pub struct BaseEnvironment {
 
 impl BaseEnvironment {
     pub fn new() -> Self {
-        Self {
-            mem: HashMap::new(),
-        }
+        let mut mem = HashMap::new();
+        builtin::all().into_iter().for_each(|(name, func)| {
+            mem.insert(name, Object::Builtin(func));
+        });
+        Self { mem }
     }
 }
 
@@ -71,6 +74,7 @@ pub enum Object {
     String(String),
     Boolean(bool),
     Function(Vec<Token>, StatementNode),
+    Builtin(fn(Vec<Object>) -> Object),
 }
 
 impl Object {
@@ -270,7 +274,8 @@ impl Evaluator {
                 Ok(Object::Function(params, body.as_ref().clone()))
             }
             ExpressionNode::Call(function, mut args) => {
-                if let Object::Function(params, body) = self.eval_expression(*function)? {
+                let function = self.eval_expression(*function)?;
+                if let Object::Function(params, body) = function {
                     let mut scope = ChildEnvironment::new(self.env.clone());
                     for param in params.iter() {
                         if let Token::Identifier(name) = param {
@@ -283,6 +288,12 @@ impl Evaluator {
                         env: Rc::new(RefCell::new(scope)),
                     }
                     .eval(body)?)
+                } else if let Object::Builtin(builtin) = function {
+                    let args = args
+                        .into_iter()
+                        .map(|arg| self.eval_expression(arg).unwrap())
+                        .collect();
+                    Ok(builtin(args))
                 } else {
                     Err(EvalError::new("invalid function expression"))
                 }
