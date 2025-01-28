@@ -8,6 +8,7 @@ use std::ops::{Add, Div, Mul, Not, Sub};
 use std::rc::Rc;
 
 pub trait Environment {
+    fn declared(&self, name: &String) -> bool;
     fn get(&self, name: &String) -> Object;
     fn set(&mut self, name: String, value: Object);
 }
@@ -28,6 +29,10 @@ impl BaseEnvironment {
 }
 
 impl Environment for BaseEnvironment {
+    fn declared(&self, name: &String) -> bool {
+        self.mem.get(name).is_some()
+    }
+
     fn get(&self, name: &String) -> Object {
         match self.mem.get(name) {
             None => Object::Nil,
@@ -55,6 +60,10 @@ impl ChildEnvironment {
 }
 
 impl Environment for ChildEnvironment {
+    fn declared(&self, name: &String) -> bool {
+        self.mem.get(name).is_some() || self.parent.borrow().declared(name)
+    }
+
     fn get(&self, name: &String) -> Object {
         match self.mem.get(name) {
             None => self.parent.borrow().get(name),
@@ -216,6 +225,19 @@ impl Evaluator {
     fn eval_stmt(&mut self, stmt: StatementNode) -> Result<Object, EvalError> {
         match stmt {
             StatementNode::Let(name, expr) => {
+                let value = match expr {
+                    None => Ok(Object::Nil),
+                    Some(expr) => self.eval_expr(expr),
+                }?;
+                self.env.borrow_mut().set(name, value);
+                Ok(Object::Nil)
+            }
+            StatementNode::Assign(name, expr) => {
+                if !self.env.borrow().declared(&name) {
+                    return Err(EvalError::new(
+                        format!("undeclared variable '{}'", name).as_str(),
+                    ));
+                }
                 let value = match expr {
                     None => Ok(Object::Nil),
                     Some(expr) => self.eval_expr(expr),

@@ -154,7 +154,22 @@ impl Parser {
                 }?;
                 Ok(While(condition, Box::new(body)))
             }
-            other => Ok(StatementNode::Expression(self.parse_expression(other)?)),
+            other => {
+                if let Some(Token::Assign) = self.lexer.peek() {
+                    match other {
+                        Token::Identifier(name) => {
+                            self.lexer.next();
+                            Ok(StatementNode::Assign(
+                                name,
+                                self.parse_remaining_expression()?,
+                            ))
+                        }
+                        _ => Err(ParseError::unrecognized_token(other)),
+                    }
+                } else {
+                    Ok(StatementNode::Expression(self.parse_expression(other)?))
+                }
+            }
         }
     }
 
@@ -347,6 +362,7 @@ pub trait Node {
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub enum StatementNode {
     Let(String, Option<ExpressionNode>),
+    Assign(String, Option<ExpressionNode>),
     Return(Option<ExpressionNode>),
     Expression(ExpressionNode),
     Block(Vec<StatementNode>),
@@ -363,6 +379,14 @@ impl Node for StatementNode {
         match self {
             StatementNode::Let(name, value) => {
                 let mut out = format!("let {}", name);
+                if let Some(expr) = value {
+                    out += format!(" = {}", expr.literal()).as_str()
+                }
+                out += ";";
+                out
+            }
+            StatementNode::Assign(name, value) => {
+                let mut out = format!("{}", name);
                 if let Some(expr) = value {
                     out += format!(" = {}", expr.literal()).as_str()
                 }
