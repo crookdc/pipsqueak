@@ -4,6 +4,7 @@ use crate::parser::ExpressionNode;
 use crate::parser::StatementNode;
 use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
+use std::fmt::{Display, Formatter};
 use std::ops::{Add, Div, Mul, Not, Sub};
 use std::rc::Rc;
 
@@ -192,11 +193,11 @@ impl EvalError {
             msg: format!("unexpected token {token:?}"),
         }
     }
+}
 
-    fn mixed_operands(a: Object, b: Object) -> EvalError {
-        Self {
-            msg: format!("unexpected mixed operands {a:?} and {b:?}"),
-        }
+impl Display for EvalError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.msg)
     }
 }
 

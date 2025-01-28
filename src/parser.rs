@@ -3,6 +3,7 @@ use crate::parser::ExpressionNode::Call;
 use crate::parser::StatementNode::While;
 use std::cmp::PartialOrd;
 use std::collections::VecDeque;
+use std::fmt::{Display, Formatter};
 
 #[derive(Debug)]
 pub struct ParseError {
@@ -37,6 +38,15 @@ impl ParseError {
             msg: format!("malformed input for type {value}"),
             token: None,
         }
+    }
+}
+
+impl Display for ParseError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        if let Some(token) = &self.token {
+            write!(f, "{:?}:", token)?;
+        }
+        write!(f, "{}", self.msg)
     }
 }
 
@@ -342,17 +352,6 @@ impl Parser {
             Err(ParseError::eof())
         }
     }
-
-    fn seek_token(&mut self, kind: Token) -> Result<(), ParseError> {
-        while let Some(token) = self.lexer.next() {
-            if token == Token::Eof {
-                return Err(ParseError::eof());
-            } else if token == kind {
-                return Ok(());
-            }
-        }
-        Err(ParseError::eof())
-    }
 }
 
 pub trait Node {
@@ -473,10 +472,6 @@ impl ProgramNode {
     pub fn push(&mut self, node: StatementNode) {
         self.statements.push_back(node)
     }
-
-    pub fn len(&self) -> usize {
-        self.statements.len()
-    }
 }
 
 impl Node for ProgramNode {
@@ -501,7 +496,7 @@ mod tests {
         "#;
         let mut parser = Parser::new(Lexer::new(source.chars().collect()));
         let mut program = parser.parse().unwrap();
-        assert_eq!(2, program.len());
+        assert_eq!(2, program.statements.len());
         for identifier in vec!["a", "b"] {
             let stmt = program.pop().unwrap();
             match stmt {
@@ -519,7 +514,7 @@ mod tests {
         "#;
         let mut parser = Parser::new(Lexer::new(source.chars().collect()));
         let program = parser.parse().unwrap();
-        assert_eq!(2, program.len());
+        assert_eq!(2, program.statements.len());
         for stmt in program.statements {
             match stmt {
                 StatementNode::Return(..) => {}
@@ -533,7 +528,7 @@ mod tests {
         let source = "foobar; foo; bar;";
         let mut parser = Parser::new(Lexer::new(source.chars().collect()));
         let mut program = parser.parse().unwrap();
-        assert_eq!(3, program.len());
+        assert_eq!(3, program.statements.len());
         for identifier in vec!["foobar", "foo", "bar"] {
             let stmt = program.pop();
             match stmt {
@@ -551,7 +546,7 @@ mod tests {
         let source = "5; 110;";
         let mut parser = Parser::new(Lexer::new(source.chars().collect()));
         let mut program = parser.parse().unwrap();
-        assert_eq!(2, program.len());
+        assert_eq!(2, program.statements.len());
         for literal in vec![5, 110] {
             match program.pop() {
                 None => panic!("unexpected end on statements"),
@@ -568,7 +563,7 @@ mod tests {
         let source = "true; false;";
         let mut parser = Parser::new(Lexer::new(source.chars().collect()));
         let mut program = parser.parse().unwrap();
-        assert_eq!(2, program.len());
+        assert_eq!(2, program.statements.len());
         for literal in vec![true, false] {
             match program.pop().unwrap() {
                 StatementNode::Expression(ExpressionNode::Boolean(value)) => {
@@ -592,7 +587,7 @@ mod tests {
         for assertion in assertions {
             let mut parser = Parser::new(Lexer::new(assertion.0.chars().collect()));
             let mut program = parser.parse().unwrap();
-            assert_eq!(1, program.len());
+            assert_eq!(1, program.statements.len());
             match program.pop().unwrap() {
                 StatementNode::Expression(ExpressionNode::Prefix(operator, expr)) => {
                     assert_eq!(assertion.1, operator);
@@ -660,7 +655,7 @@ mod tests {
         for test in tests {
             let mut parser = Parser::new(Lexer::new(test.0.chars().collect()));
             let mut program = parser.parse().unwrap();
-            assert_eq!(1, program.len());
+            assert_eq!(1, program.statements.len());
             match program.pop().unwrap() {
                 StatementNode::Expression(ExpressionNode::Infix(operator, left, right)) => {
                     assert_eq!(test.1, left);
@@ -682,7 +677,7 @@ mod tests {
         "#;
         let mut parser = Parser::new(Lexer::new(source.chars().collect()));
         let mut program = parser.parse().unwrap();
-        assert_eq!(1, program.len());
+        assert_eq!(1, program.statements.len());
         match program.pop().unwrap() {
             StatementNode::If(condition, consequence, None) => {
                 assert_eq!(
@@ -719,7 +714,7 @@ mod tests {
         "#;
         let mut parser = Parser::new(Lexer::new(source.chars().collect()));
         let mut program = parser.parse().unwrap();
-        assert_eq!(1, program.len());
+        assert_eq!(1, program.statements.len());
         match program.pop().unwrap() {
             StatementNode::If(condition, consequence, alternative) => {
                 assert_eq!(
@@ -764,7 +759,7 @@ mod tests {
         "#;
         let mut parser = Parser::new(Lexer::new(source.chars().collect()));
         let mut program = parser.parse().unwrap();
-        assert_eq!(1, program.len());
+        assert_eq!(1, program.statements.len());
         match program.pop().unwrap() {
             StatementNode::Let(name, Some(ExpressionNode::Function(params, body))) => {
                 assert_eq!("sum".to_string(), name);
@@ -789,7 +784,7 @@ mod tests {
         "#;
         let mut parser = Parser::new(Lexer::new(source.chars().collect()));
         let mut program = parser.parse().unwrap();
-        assert_eq!(1, program.len());
+        assert_eq!(1, program.statements.len());
         match program.pop().unwrap() {
             StatementNode::Let(name, Some(ExpressionNode::Function(params, body))) => {
                 assert_eq!("todo".to_string(), name);
@@ -810,7 +805,7 @@ mod tests {
         "#;
         let mut parser = Parser::new(Lexer::new(source.chars().collect()));
         let mut program = parser.parse().unwrap();
-        assert_eq!(1, program.len());
+        assert_eq!(1, program.statements.len());
         match program.pop().unwrap() {
             StatementNode::Expression(ExpressionNode::Call(_, arguments)) => {
                 assert_eq!(2, arguments.len());
@@ -834,7 +829,7 @@ mod tests {
         "#;
         let mut parser = Parser::new(Lexer::new(source.chars().collect()));
         let mut program = parser.parse().unwrap();
-        assert_eq!(1, program.len());
+        assert_eq!(1, program.statements.len());
         match program.pop().unwrap() {
             StatementNode::Expression(ExpressionNode::Call(function, args)) => {
                 assert_eq!(

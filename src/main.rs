@@ -1,10 +1,8 @@
 use crate::eval::Evaluator;
 use crate::lexer::Lexer;
-use crate::lexer::Token::LeftCurlyBrace;
 use crate::parser::Parser;
 use std::io::{BufRead, Write};
 use std::{env, fs, io};
-use crate::builtin::print;
 
 mod builtin;
 mod eval;
