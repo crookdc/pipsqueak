@@ -3,7 +3,7 @@ use crate::parser::ExpressionNode::Call;
 use crate::parser::StatementNode::While;
 use std::cmp::PartialOrd;
 use std::collections::VecDeque;
-use std::fmt::{format, Display, Formatter};
+use std::fmt::{Display, Formatter};
 
 #[derive(Debug)]
 pub struct ParseError {
