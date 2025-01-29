@@ -27,6 +27,8 @@ pub enum Token {
     RightParenthesis,
     LeftCurlyBrace,
     RightCurlyBrace,
+    LeftBracket,
+    RightBracket,
     Function,
     Let,
 }
@@ -136,6 +138,8 @@ impl Iterator for Lexer {
             ')' => Token::RightParenthesis,
             '{' => Token::LeftCurlyBrace,
             '}' => Token::RightCurlyBrace,
+            '[' => Token::LeftBracket,
+            ']' => Token::RightBracket,
             '\0' => Token::Eof,
             '"' => {
                 self.index += 1;

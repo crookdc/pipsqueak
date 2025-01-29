@@ -83,6 +83,7 @@ pub enum Object {
     Integer(i32),
     String(String),
     Boolean(bool),
+    List(Vec<Object>),
     Function(Vec<Token>, StatementNode),
     Builtin(fn(Vec<Object>) -> Object),
 }
@@ -214,13 +215,14 @@ impl Evaluator {
         }
     }
 
-    pub fn eval(&mut self, stmt: StatementNode) -> Result<(), EvalError> {
+    pub fn eval(&mut self, stmt: StatementNode) -> Result<Object, EvalError> {
         self.queue.clear();
         self.queue.push_back(stmt);
+        let mut out = Object::Nil;
         while let Some(stmt) = self.queue.pop_front() {
-            self.eval_stmt(stmt)?;
+            out = self.eval_stmt(stmt)?;
         }
-        Ok(())
+        Ok(out)
     }
 
     fn eval_stmt(&mut self, stmt: StatementNode) -> Result<Object, EvalError> {
@@ -288,6 +290,11 @@ impl Evaluator {
             ExpressionNode::Integer(val) => Ok(Object::Integer(val)),
             ExpressionNode::String(val) => Ok(Object::String(val)),
             ExpressionNode::Boolean(val) => Ok(Object::Boolean(val)),
+            ExpressionNode::List(vals) => Ok(Object::List(
+                vals.into_iter()
+                    .map(|e| self.eval_expr(e).unwrap())
+                    .collect(),
+            )),
             ExpressionNode::Prefix(operator, left) => {
                 let left = self.eval_expr(*left)?;
                 match operator {
@@ -314,6 +321,17 @@ impl Evaluator {
             ExpressionNode::Function(params, body) => {
                 Ok(Object::Function(params, body.as_ref().clone()))
             }
+            ExpressionNode::Index(list, index) => {
+                match self.eval_expr(*list)? {
+                    Object::List(elements) => {
+                        match self.eval_expr(*index)? {
+                            Object::Integer(index) => Ok(elements[index as usize].clone()),
+                            other => Err(EvalError::unexpected_type(other))
+                        }
+                    },
+                    other => Err(EvalError::unexpected_type(other)),
+                }
+            }
             ExpressionNode::Call(function, mut args) => {
                 let function = self.eval_expr(*function)?;
                 if let Object::Function(params, body) = function {
@@ -329,7 +347,7 @@ impl Evaluator {
                         env: Rc::new(RefCell::new(scope)),
                         queue: VecDeque::new(),
                     }
-                    .eval_stmt(body)?)
+                    .eval(body)?)
                 } else if let Object::Builtin(builtin) = function {
                     let args = args
                         .into_iter()

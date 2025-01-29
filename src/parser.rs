@@ -3,7 +3,7 @@ use crate::parser::ExpressionNode::Call;
 use crate::parser::StatementNode::While;
 use std::cmp::PartialOrd;
 use std::collections::VecDeque;
-use std::fmt::{Display, Formatter};
+use std::fmt::{format, Display, Formatter};
 
 #[derive(Debug)]
 pub struct ParseError {
@@ -63,6 +63,7 @@ impl Precedence {
     fn from_operator(op: &Token) -> Option<Precedence> {
         match op {
             Token::RightParenthesis => Some(Precedence::Lowest),
+            Token::RightBracket => Some(Precedence::Lowest),
             Token::Plus => Some(Precedence::Sum),
             Token::Minus => Some(Precedence::Sum),
             Token::Asterisk => Some(Precedence::Product),
@@ -225,6 +226,11 @@ impl Parser {
                 self.expect_next_token(Token::RightParenthesis)?;
                 Ok(expr)
             }
+            Token::LeftBracket => {
+                let expr = ExpressionNode::List(self.parse_argument_list(Token::RightBracket)?);
+                self.expect_next_token(Token::RightBracket)?;
+                Ok(expr)
+            }
             Token::Function => {
                 let params = self.parse_parameter_list()?;
                 let body = match self.lexer.next() {
@@ -241,7 +247,21 @@ impl Parser {
                     break;
                 }
                 Token::LeftParenthesis => {
-                    expr = Call(Box::new(expr), self.parse_argument_list()?);
+                    self.expect_next_token(Token::LeftParenthesis)?;
+                    expr = Call(
+                        Box::new(expr),
+                        self.parse_argument_list(Token::RightParenthesis)?,
+                    );
+                    self.expect_next_token(Token::RightParenthesis)?;
+                }
+                Token::LeftBracket => {
+                    self.expect_next_token(Token::LeftBracket)?;
+                    let idx = match self.lexer.next() {
+                        None => Err(ParseError::eof()),
+                        Some(next) => self.parse_expression_recursive(next, Precedence::Lowest),
+                    }?;
+                    expr = ExpressionNode::Index(Box::new(expr), Box::new(idx));
+                    self.expect_next_token(Token::RightBracket)?;
                 }
                 _ => match Precedence::from_operator(&peeked) {
                     None => break,
@@ -297,8 +317,10 @@ impl Parser {
         Ok(params)
     }
 
-    fn parse_argument_list(&mut self) -> Result<Vec<ExpressionNode>, ParseError> {
-        self.expect_next_token(Token::LeftParenthesis)?;
+    fn parse_argument_list(
+        &mut self,
+        terminator: Token,
+    ) -> Result<Vec<ExpressionNode>, ParseError> {
         if let Some(Token::RightParenthesis) = self.lexer.peek() {
             self.lexer.next();
             return Ok(vec![]);
@@ -314,13 +336,16 @@ impl Parser {
                     return Err(ParseError::eof());
                 }
             }
-            if let Some(Token::RightParenthesis) = self.lexer.peek() {
-                break;
-            } else {
-                self.expect_next_token(Token::Comma)?;
+            match self.lexer.peek() {
+                Some(token) => {
+                    if token == terminator {
+                        break;
+                    }
+                    self.expect_next_token(Token::Comma)?;
+                }
+                None => return Err(ParseError::eof()),
             }
         }
-        self.expect_next_token(Token::RightParenthesis)?;
         Ok(args)
     }
 
@@ -420,6 +445,8 @@ pub enum ExpressionNode {
     Integer(i32),
     String(String),
     Boolean(bool),
+    List(Vec<ExpressionNode>),
+    Index(Box<ExpressionNode>, Box<ExpressionNode>),
     Prefix(Token, Box<ExpressionNode>),
     Infix(Token, Box<ExpressionNode>, Box<ExpressionNode>),
     Function(Vec<Token>, Box<StatementNode>),
@@ -455,6 +482,17 @@ impl Node for ExpressionNode {
                     .collect::<Vec<String>>()
                     .join(", ");
                 format!("{}({})", function.literal(), args)
+            }
+            ExpressionNode::List(elems) => {
+                let elems: String = elems
+                    .iter()
+                    .map(|e| e.literal())
+                    .collect::<Vec<String>>()
+                    .join(", ");
+                format!("[{elems}]")
+            }
+            ExpressionNode::Index(list, index) => {
+                format!("{}[{}]", list.literal(), index.literal())
             }
         }
     }
