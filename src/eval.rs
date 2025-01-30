@@ -1,7 +1,7 @@
 use crate::builtin;
 use crate::lexer::Token;
-use crate::parser::ExpressionNode;
 use crate::parser::StatementNode;
+use crate::parser::{ExpressionNode, Node};
 use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 use std::fmt::{Display, Formatter};
@@ -86,6 +86,7 @@ pub enum Object {
     List(Vec<Object>),
     Function(Vec<Token>, StatementNode),
     Builtin(fn(Vec<Object>) -> Object),
+    Return(Box<Object>),
 }
 
 impl Object {
@@ -272,13 +273,22 @@ impl Evaluator {
             StatementNode::Block(stmts) => {
                 let mut out = Object::Nil;
                 for s in stmts {
-                    out = self.eval_stmt(s)?;
+                    match s {
+                        StatementNode::Return(expr) => {
+                            out = match expr {
+                                None => Object::Return(Box::new(Object::Nil)),
+                                Some(expr) => Object::Return(Box::new(self.eval_expr(expr)?)),
+                            };
+                            break;
+                        }
+                        other => out = self.eval_stmt(other)?,
+                    }
                 }
                 Ok(out)
             }
             StatementNode::Return(expr) => match expr {
-                None => Ok(Object::Nil),
-                Some(expr) => self.eval_expr(expr),
+                None => Ok(Object::Return(Box::new(Object::Nil))),
+                Some(expr) => Ok(Object::Return(Box::new(self.eval_expr(expr)?))),
             },
             StatementNode::Expression(expr) => self.eval_expr(expr),
         }
@@ -318,20 +328,14 @@ impl Evaluator {
                     _ => Err(EvalError::unexpected_token(operator)),
                 }
             }
-            ExpressionNode::Function(params, body) => {
-                Ok(Object::Function(params, body.as_ref().clone()))
-            }
-            ExpressionNode::Index(list, index) => {
-                match self.eval_expr(*list)? {
-                    Object::List(elements) => {
-                        match self.eval_expr(*index)? {
-                            Object::Integer(index) => Ok(elements[index as usize].clone()),
-                            other => Err(EvalError::unexpected_type(other))
-                        }
-                    },
+            ExpressionNode::Function(params, body) => Ok(Object::Function(params, *body)),
+            ExpressionNode::Index(list, index) => match self.eval_expr(*list)? {
+                Object::List(elements) => match self.eval_expr(*index)? {
+                    Object::Integer(index) => Ok(elements[index as usize].clone()),
                     other => Err(EvalError::unexpected_type(other)),
-                }
-            }
+                },
+                other => Err(EvalError::unexpected_type(other)),
+            },
             ExpressionNode::Call(function, mut args) => {
                 let function = self.eval_expr(*function)?;
                 if let Object::Function(params, body) = function {
@@ -343,11 +347,14 @@ impl Evaluator {
                             return Err(EvalError::unexpected_token(param.clone()));
                         }
                     }
-                    Ok(Self {
+                    let mut child = Self {
                         env: Rc::new(RefCell::new(scope)),
                         queue: VecDeque::new(),
+                    };
+                    match child.eval(body)? {
+                        Object::Return(value) => Ok(*value),
+                        other => Ok(other),
                     }
-                    .eval(body)?)
                 } else if let Object::Builtin(builtin) = function {
                     let args = args
                         .into_iter()
