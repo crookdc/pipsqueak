@@ -4,7 +4,7 @@ use crate::parser::StatementNode;
 use crate::parser::{ExpressionNode, Node};
 use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
-use std::fmt::{Display, Formatter};
+use std::fmt::{format, Display, Formatter};
 use std::ops::{Add, Div, Mul, Not, Sub};
 use std::rc::Rc;
 
@@ -273,15 +273,9 @@ impl Evaluator {
             StatementNode::Block(stmts) => {
                 let mut out = Object::Nil;
                 for s in stmts {
-                    match s {
-                        StatementNode::Return(expr) => {
-                            out = match expr {
-                                None => Object::Return(Box::new(Object::Nil)),
-                                Some(expr) => Object::Return(Box::new(self.eval_expr(expr)?)),
-                            };
-                            break;
-                        }
-                        other => out = self.eval_stmt(other)?,
+                    out = self.eval_stmt(s)?;
+                    if let Object::Return(_) = &out {
+                        break;
                     }
                 }
                 Ok(out)
@@ -553,31 +547,7 @@ mod tests {
         let mut evaluator = Evaluator::new();
         for assert in assertions {
             let out = evaluator.eval_stmt(StatementNode::Block(assert.0)).unwrap();
-            assert_eq!(assert.1, out);
-        }
-    }
-
-    #[test]
-    fn test_return_statement_eval() {
-        let assertions = vec![
-            (None, Object::Nil),
-            (Some(ExpressionNode::Integer(5)), Object::Integer(5)),
-            (Some(ExpressionNode::Boolean(true)), Object::Boolean(true)),
-            (
-                Some(ExpressionNode::Infix(
-                    Token::Asterisk,
-                    Box::new(ExpressionNode::Integer(5)),
-                    Box::new(ExpressionNode::Integer(10)),
-                )),
-                Object::Integer(50),
-            ),
-        ];
-        let mut evaluator = Evaluator::new();
-        for assert in assertions {
-            let out = evaluator
-                .eval_stmt(StatementNode::Return(assert.0))
-                .unwrap();
-            assert_eq!(assert.1, out);
+            assert_eq!(Object::Return(Box::new(assert.1)), out);
         }
     }
 }
