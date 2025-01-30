@@ -1,10 +1,10 @@
 use crate::builtin;
 use crate::lexer::Token;
 use crate::parser::StatementNode;
-use crate::parser::{ExpressionNode, Node};
+use crate::parser::ExpressionNode;
 use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
-use std::fmt::{format, Display, Formatter};
+use std::fmt::{Display, Formatter};
 use std::ops::{Add, Div, Mul, Not, Sub};
 use std::rc::Rc;
 

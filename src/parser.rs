@@ -742,6 +742,7 @@ mod tests {
         }
     }
 
+    #[test]
     fn test_parse_if_else_statement() {
         let source = r#"
         if (a < b) {
