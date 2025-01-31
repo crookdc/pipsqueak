@@ -15,6 +15,7 @@ pub fn len(args: Vec<Object>) -> Object {
     }
     match args.get(0).unwrap() {
         Object::String(value) => Object::Integer(value.len() as i32),
+        Object::List(value) => Object::Integer(value.len() as i32),
         other => panic!("incorrect value passed to len: {other:?}"),
     }
 }

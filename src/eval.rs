@@ -264,11 +264,14 @@ impl Evaluator {
                 }
             }
             StatementNode::While(condition, body) => {
-                if let Object::Boolean(true) = self.eval_expr(condition.clone())? {
-                    self.eval_stmt(*body.clone())?;
-                    self.queue.push_back(StatementNode::While(condition, body));
+                let mut out = Object::Nil;
+                while let Object::Boolean(true) = self.eval_expr(condition.clone())? {
+                    out = self.eval_stmt(*body.clone())?;
+                    if let Object::Return(_) = &out {
+                        break;
+                    }
                 }
-                Ok(Object::Nil)
+                Ok(out)
             }
             StatementNode::Block(stmts) => {
                 let mut out = Object::Nil;
