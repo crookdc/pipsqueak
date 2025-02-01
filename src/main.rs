@@ -24,7 +24,7 @@ fn execute_script(path: &str) {
     let mut program = parser.parse().unwrap();
     let mut eval = Evaluator::new();
     while let Some(stmt) = program.pop() {
-        eval.eval(stmt).unwrap();
+        eval.eval_stmt(stmt).unwrap();
     }
 }
 
@@ -41,7 +41,7 @@ fn start_repl(input: &mut impl BufRead, output: &mut impl Write) {
         let mut parser = Parser::new(Lexer::new(cmd.chars().collect()));
         let mut program = parser.parse().unwrap();
         while let Some(stmt) = program.pop() {
-            evaluator.eval(stmt).unwrap();
+            evaluator.eval_stmt(stmt).unwrap();
         }
     }
 }

@@ -1,9 +1,9 @@
 use crate::builtin;
 use crate::lexer::Token;
-use crate::parser::StatementNode;
 use crate::parser::ExpressionNode;
+use crate::parser::StatementNode;
 use std::cell::RefCell;
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::ops::{Add, Div, Mul, Not, Sub};
 use std::rc::Rc;
@@ -205,56 +205,31 @@ impl Display for EvalError {
 
 pub struct Evaluator {
     env: Rc<RefCell<dyn Environment>>,
-    queue: VecDeque<StatementNode>,
 }
 
 impl Evaluator {
     pub fn new() -> Self {
         Self {
             env: Rc::new(RefCell::new(BaseEnvironment::new())),
-            queue: VecDeque::new(),
         }
     }
 
-    pub fn eval(&mut self, stmt: StatementNode) -> Result<Object, EvalError> {
-        self.queue.clear();
-        self.queue.push_back(stmt);
-        let mut out = Object::Nil;
-        while let Some(stmt) = self.queue.pop_front() {
-            out = self.eval_stmt(stmt)?;
-        }
-        Ok(out)
-    }
-
-    fn eval_stmt(&mut self, stmt: StatementNode) -> Result<Object, EvalError> {
+    pub fn eval_stmt(&mut self, stmt: StatementNode) -> Result<Object, EvalError> {
         match stmt {
             StatementNode::Let(name, expr) => {
-                let value = match expr {
-                    None => Ok(Object::Nil),
-                    Some(expr) => self.eval_expr(expr),
-                }?;
-                self.env.borrow_mut().set(name, value);
+                self.env.borrow_mut().set(name.clone(), Object::Nil);
+                self.eval_assign(name, expr)?;
                 Ok(Object::Nil)
             }
             StatementNode::Assign(name, expr) => {
-                if !self.env.borrow().declared(&name) {
-                    return Err(EvalError::new(
-                        format!("undeclared variable '{}'", name).as_str(),
-                    ));
-                }
-                let value = match expr {
-                    None => Ok(Object::Nil),
-                    Some(expr) => self.eval_expr(expr),
-                }?;
-                self.env.borrow_mut().set(name, value);
+                self.eval_assign(name, expr)?;
                 Ok(Object::Nil)
             }
             StatementNode::If(condition, consequence, alternative) => {
                 match self.eval_expr(condition)? {
-                    Object::Boolean(val) => {
-                        if val {
-                            self.eval_stmt(*consequence)
-                        } else if let Some(alt) = alternative {
+                    Object::Boolean(true) => self.eval_stmt(*consequence),
+                    Object::Boolean(false) => {
+                        if let Some(alt) = alternative {
                             self.eval_stmt(*alt)
                         } else {
                             Ok(Object::Nil)
@@ -289,6 +264,20 @@ impl Evaluator {
             },
             StatementNode::Expression(expr) => self.eval_expr(expr),
         }
+    }
+
+    fn eval_assign(&mut self, name: String, expr: Option<ExpressionNode>) -> Result<(), EvalError> {
+        if !self.env.borrow().declared(&name) {
+            return Err(EvalError::new(
+                format!("undeclared variable '{}'", name).as_str(),
+            ));
+        }
+        let value = match expr {
+            None => Ok(Object::Nil),
+            Some(expr) => self.eval_expr(expr),
+        }?;
+        self.env.borrow_mut().set(name, value);
+        Ok(())
     }
 
     fn eval_expr(&self, expr: ExpressionNode) -> Result<Object, EvalError> {
@@ -333,35 +322,40 @@ impl Evaluator {
                 },
                 other => Err(EvalError::unexpected_type(other)),
             },
-            ExpressionNode::Call(function, mut args) => {
-                let function = self.eval_expr(*function)?;
-                if let Object::Function(params, body) = function {
-                    let mut scope = ChildEnvironment::new(self.env.clone());
-                    for param in params.iter() {
-                        if let Token::Identifier(name) = param {
-                            scope.set(name.clone(), self.eval_expr(args.pop().unwrap())?)
-                        } else {
-                            return Err(EvalError::unexpected_token(param.clone()));
-                        }
-                    }
-                    let mut child = Self {
-                        env: Rc::new(RefCell::new(scope)),
-                        queue: VecDeque::new(),
-                    };
-                    match child.eval(body)? {
-                        Object::Return(value) => Ok(*value),
-                        other => Ok(other),
-                    }
-                } else if let Object::Builtin(builtin) = function {
-                    let args = args
-                        .into_iter()
-                        .map(|arg| self.eval_expr(arg).unwrap())
-                        .collect();
-                    Ok(builtin(args))
+            ExpressionNode::Call(function, args) => self.eval_call(function, args),
+        }
+    }
+
+    fn eval_call(
+        &self,
+        function: Box<ExpressionNode>,
+        mut args: Vec<ExpressionNode>,
+    ) -> Result<Object, EvalError> {
+        let function = self.eval_expr(*function)?;
+        if let Object::Function(params, body) = function {
+            let mut scope = ChildEnvironment::new(self.env.clone());
+            for param in params.iter() {
+                if let Token::Identifier(name) = param {
+                    scope.set(name.clone(), self.eval_expr(args.pop().unwrap())?)
                 } else {
-                    Err(EvalError::new("invalid function expression"))
+                    return Err(EvalError::unexpected_token(param.clone()));
                 }
             }
+            let mut child = Self {
+                env: Rc::new(RefCell::new(scope)),
+            };
+            match child.eval_stmt(body)? {
+                Object::Return(value) => Ok(*value),
+                other => Ok(other),
+            }
+        } else if let Object::Builtin(builtin) = function {
+            let args = args
+                .into_iter()
+                .map(|arg| self.eval_expr(arg).unwrap())
+                .collect();
+            Ok(builtin(args))
+        } else {
+            Err(EvalError::new("invalid function expression"))
         }
     }
 }
@@ -550,7 +544,7 @@ mod tests {
         let mut evaluator = Evaluator::new();
         for assert in assertions {
             let out = evaluator.eval_stmt(StatementNode::Block(assert.0)).unwrap();
-            assert_eq!(Object::Return(Box::new(assert.1)), out);
+            assert_eq!(assert.1, out);
         }
     }
 }
