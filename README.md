@@ -9,3 +9,27 @@ in handy.
 
 Some liberties have been taken with the design of the language, and I hope to further experiment with implementing new 
 fun little features when the mood strikes.
+
+## Examples
+
+### Fibonacci
+```
+let fib = fn(n) {
+  if (n < 2) {
+    return n;
+  }
+  fib(n-1) + fib(n-2)
+};
+
+print(fib(7));
+```
+
+### Printing elements of a list
+```
+let names = ["Crookd", "Brookd", "Lookd"];
+let i = 0;
+while (i < len(names)) {
+  print(names[i], " is really cool!");
+  i = i + 1;
+}
+```
