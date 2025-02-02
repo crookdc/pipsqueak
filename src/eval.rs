@@ -329,33 +329,44 @@ impl Evaluator {
     fn eval_call(
         &self,
         function: Box<ExpressionNode>,
-        mut args: Vec<ExpressionNode>,
+        args: Vec<ExpressionNode>,
     ) -> Result<Object, EvalError> {
         let function = self.eval_expr(*function)?;
         if let Object::Function(params, body) = function {
-            let mut scope = ChildEnvironment::new(self.env.clone());
-            for param in params.iter() {
-                if let Token::Identifier(name) = param {
-                    scope.set(name.clone(), self.eval_expr(args.pop().unwrap())?)
-                } else {
-                    return Err(EvalError::unexpected_token(param.clone()));
-                }
-            }
-            let mut child = Self {
-                env: Rc::new(RefCell::new(scope)),
-            };
-            match child.eval_stmt(body)? {
-                Object::Return(value) => Ok(*value),
-                other => Ok(other),
-            }
+            self.eval_user_func(params, self.eval_args(args), body)
         } else if let Object::Builtin(builtin) = function {
-            let args = args
-                .into_iter()
-                .map(|arg| self.eval_expr(arg).unwrap())
-                .collect();
-            Ok(builtin(args))
+            Ok(builtin(self.eval_args(args)))
         } else {
             Err(EvalError::new("invalid function expression"))
+        }
+    }
+
+    fn eval_args(&self, args: Vec<ExpressionNode>) -> Vec<Object> {
+        args.into_iter()
+            .map(|arg| self.eval_expr(arg).unwrap())
+            .collect()
+    }
+
+    fn eval_user_func(
+        &self,
+        params: Vec<Token>,
+        mut args: Vec<Object>,
+        body: StatementNode,
+    ) -> Result<Object, EvalError> {
+        let mut scope = ChildEnvironment::new(self.env.clone());
+        for param in params.iter() {
+            if let Token::Identifier(name) = param {
+                scope.set(name.clone(), args.pop().unwrap());
+            } else {
+                return Err(EvalError::unexpected_token(param.clone()));
+            }
+        }
+        let mut child = Self {
+            env: Rc::new(RefCell::new(scope)),
+        };
+        match child.eval_stmt(body)? {
+            Object::Return(value) => Ok(*value),
+            other => Ok(other),
         }
     }
 }
