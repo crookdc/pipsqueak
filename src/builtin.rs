@@ -26,6 +26,14 @@ pub fn print(args: Vec<Object>) -> Object {
         Object::Integer(value) => print!("{}", value),
         Object::String(value) => print!("{}", value),
         Object::Boolean(value) => print!("{}", value),
+        Object::List(elements) => {
+            let elements = elements
+                .iter()
+                .map(|obj| obj.to_string())
+                .collect::<Vec<String>>()
+                .join(", ");
+            print!("[{}]", elements)
+        }
         _ => {}
     });
     println!();

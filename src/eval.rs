@@ -101,6 +101,19 @@ impl Object {
     }
 }
 
+impl Display for Object {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let str = match self {
+            Object::Nil => "nil".to_string(),
+            Object::Integer(val) => val.to_string(),
+            Object::String(val) => val.to_string(),
+            Object::Boolean(val) => val.to_string(),
+            _ => String::new(),
+        };
+        write!(f, "{}", str)
+    }
+}
+
 impl Not for Object {
     type Output = Result<Self, EvalError>;
 
