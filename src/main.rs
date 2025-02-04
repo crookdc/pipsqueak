@@ -19,17 +19,30 @@ fn main() {
 }
 
 fn execute_script(path: &str) {
+    let wd = env::current_dir()
+        .unwrap()
+        .as_path()
+        .to_str()
+        .unwrap()
+        .to_string();
     let src = fs::read_to_string(path).unwrap();
     let mut parser = Parser::new(Lexer::new(src.chars().collect()));
     let mut program = parser.parse().unwrap();
-    let mut eval = Evaluator::new();
+    let mut eval = Evaluator::new(wd.to_string());
     while let Some(stmt) = program.pop() {
         eval.eval_stmt(stmt).unwrap();
     }
 }
 
 fn start_repl(input: &mut impl BufRead, output: &mut impl Write) {
-    let mut evaluator = eval::Evaluator::new();
+    let wd = env::current_dir()
+        .unwrap()
+        .as_path()
+        .to_str()
+        .unwrap()
+        .to_string();
+    let mut evaluator = eval::Evaluator::new(wd.clone());
+    write!(output, "wd: {wd}\n").unwrap();
     loop {
         write!(output, ">>").unwrap();
         output.flush().unwrap();

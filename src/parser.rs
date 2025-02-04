@@ -165,10 +165,14 @@ impl Parser {
                 }?;
                 Ok(While(condition, Box::new(body)))
             }
-            Token::Import => match self.lexer.next() {
-                None => Err(ParseError::eof()),
-                Some(Token::StringLiteral(path)) => Ok(StatementNode::Import(path)),
-                Some(other) => Err(ParseError::unrecognized_token(other)),
+            Token::Import => {
+                let out = match self.lexer.next() {
+                    None => Err(ParseError::eof()),
+                    Some(Token::StringLiteral(path)) => Ok(StatementNode::Import(path)),
+                    Some(other) => Err(ParseError::unrecognized_token(other)),
+                }?;
+                self.expect_next_token(Token::Semicolon)?;
+                Ok(out)
             },
             other => {
                 if let Some(Token::Assign) = self.lexer.peek() {

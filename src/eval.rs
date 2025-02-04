@@ -217,12 +217,14 @@ impl Display for EvalError {
 }
 
 pub struct Evaluator {
+    working_directory: String,
     env: Rc<RefCell<dyn Environment>>,
 }
 
 impl Evaluator {
-    pub fn new() -> Self {
+    pub fn new(working_directory: String) -> Self {
         Self {
+            working_directory,
             env: Rc::new(RefCell::new(BaseEnvironment::new())),
         }
     }
@@ -376,6 +378,7 @@ impl Evaluator {
             }
         }
         let mut child = Self {
+            working_directory: self.working_directory.clone(),
             env: Rc::new(RefCell::new(scope)),
         };
         match child.eval_stmt(body)? {
@@ -401,7 +404,7 @@ mod tests {
                 Object::Integer(10),
             ),
         ];
-        let mut evaluator = Evaluator::new();
+        let mut evaluator = Evaluator::new(".".to_string());
         for assert in assertions {
             let actual = evaluator.eval_stmt(assert.0).unwrap();
             assert_eq!(assert.1, actual);
@@ -426,7 +429,7 @@ mod tests {
                 Object::Boolean(false),
             ),
         ];
-        let mut evaluator = Evaluator::new();
+        let mut evaluator = Evaluator::new(".".to_string());
         for assert in assertions {
             let actual = evaluator.eval_stmt(assert.0).unwrap();
             assert_eq!(assert.1, actual);
@@ -534,7 +537,7 @@ mod tests {
                 Object::Boolean(true),
             ),
         ];
-        let mut evaluator = Evaluator::new();
+        let mut evaluator = Evaluator::new(".".to_string());
         for assert in assertions {
             let actual = evaluator.eval_stmt(assert.0).unwrap();
             assert_eq!(assert.1, actual);
@@ -566,7 +569,7 @@ mod tests {
                 Object::Boolean(false),
             ),
         ];
-        let mut evaluator = Evaluator::new();
+        let mut evaluator = Evaluator::new(".".to_string());
         for assert in assertions {
             let out = evaluator.eval_stmt(StatementNode::Block(assert.0)).unwrap();
             assert_eq!(assert.1, out);
