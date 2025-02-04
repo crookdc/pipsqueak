@@ -276,6 +276,7 @@ impl Evaluator {
                 Some(expr) => Ok(Object::Return(Box::new(self.eval_expr(expr)?))),
             },
             StatementNode::Expression(expr) => self.eval_expr(expr),
+            _ => todo!(),
         }
     }
 

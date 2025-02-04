@@ -165,6 +165,11 @@ impl Parser {
                 }?;
                 Ok(While(condition, Box::new(body)))
             }
+            Token::Import => match self.lexer.next() {
+                None => Err(ParseError::eof()),
+                Some(Token::StringLiteral(path)) => Ok(StatementNode::Import(path)),
+                Some(other) => Err(ParseError::unrecognized_token(other)),
+            },
             other => {
                 if let Some(Token::Assign) = self.lexer.peek() {
                     match other {
@@ -396,6 +401,7 @@ pub enum StatementNode {
         Option<Box<StatementNode>>,
     ),
     While(ExpressionNode, Box<StatementNode>),
+    Import(String),
 }
 
 impl Node for StatementNode {
@@ -435,6 +441,7 @@ impl Node for StatementNode {
             StatementNode::While(condition, body) => {
                 format!("while {condition:?} then {body:?}")
             }
+            StatementNode::Import(path) => format!("import \"{}\"", path),
         }
     }
 }
