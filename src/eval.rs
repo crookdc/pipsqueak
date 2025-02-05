@@ -8,66 +8,48 @@ use std::fmt::{Display, Formatter};
 use std::ops::{Add, Div, Mul, Not, Sub};
 use std::rc::Rc;
 
-pub trait Environment {
-    fn declared(&self, name: &String) -> bool;
-    fn get(&self, name: &String) -> Object;
-    fn set(&mut self, name: String, value: Object);
-}
-
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub struct BaseEnvironment {
+#[derive(Debug, Eq, PartialEq, Clone)]
+pub struct Environment {
+    parent: Option<Rc<RefCell<Environment>>>,
     mem: HashMap<String, Object>,
 }
 
-impl BaseEnvironment {
-    pub fn new() -> Self {
+impl Environment {
+    fn base() -> Self {
         let mut mem = HashMap::new();
         builtin::all().into_iter().for_each(|(name, func)| {
             mem.insert(name, Object::Builtin(func));
         });
-        Self { mem }
-    }
-}
-
-impl Environment for BaseEnvironment {
-    fn declared(&self, name: &String) -> bool {
-        self.mem.get(name).is_some()
-    }
-
-    fn get(&self, name: &String) -> Object {
-        match self.mem.get(name) {
-            None => Object::Nil,
-            Some(value) => value.clone(),
+        Self {
+            parent: None,
+            mem,
         }
     }
 
-    fn set(&mut self, name: String, value: Object) {
-        self.mem.insert(name, value);
-    }
-}
-
-pub struct ChildEnvironment {
-    parent: Rc<RefCell<dyn Environment>>,
-    mem: HashMap<String, Object>,
-}
-
-impl ChildEnvironment {
-    fn new(parent: Rc<RefCell<dyn Environment>>) -> Self {
+    fn child(parent: Rc<RefCell<Environment>>) -> Self {
         Self {
-            parent,
+            parent: Some(parent),
             mem: HashMap::new(),
         }
     }
-}
 
-impl Environment for ChildEnvironment {
     fn declared(&self, name: &String) -> bool {
-        self.mem.get(name).is_some() || self.parent.borrow().declared(name)
+        if let Some(parent) = &self.parent {
+            parent.borrow().declared(name)
+        } else {
+            self.mem.get(name).is_some()
+        }
     }
 
     fn get(&self, name: &String) -> Object {
         match self.mem.get(name) {
-            None => self.parent.borrow().get(name),
+            None => {
+                if let Some(parent) = &self.parent {
+                    parent.borrow().get(name)
+                } else {
+                    Object::Nil
+                }
+            },
             Some(value) => value.clone(),
         }
     }
@@ -87,6 +69,7 @@ pub enum Object {
     Function(Vec<Token>, StatementNode),
     Builtin(fn(Vec<Object>) -> Object),
     Return(Box<Object>),
+    Module(Environment)
 }
 
 impl Object {
@@ -218,14 +201,14 @@ impl Display for EvalError {
 
 pub struct Evaluator {
     working_directory: String,
-    env: Rc<RefCell<dyn Environment>>,
+    env: Rc<RefCell<Environment>>,
 }
 
 impl Evaluator {
     pub fn new(working_directory: String) -> Self {
         Self {
             working_directory,
-            env: Rc::new(RefCell::new(BaseEnvironment::new())),
+            env: Rc::new(RefCell::new(Environment::base())),
         }
     }
 
@@ -369,7 +352,7 @@ impl Evaluator {
         mut args: Vec<Object>,
         body: StatementNode,
     ) -> Result<Object, EvalError> {
-        let mut scope = ChildEnvironment::new(self.env.clone());
+        let mut scope = Environment::child(self.env.clone());
         for param in params.iter() {
             if let Token::Identifier(name) = param {
                 scope.set(name.clone(), args.pop().unwrap());
