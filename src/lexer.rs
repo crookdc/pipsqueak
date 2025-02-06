@@ -22,6 +22,7 @@ pub enum Token {
     Asterisk,
     Slash,
     Comma,
+    FullStop,
     Semicolon,
     LeftParenthesis,
     RightParenthesis,
@@ -31,6 +32,7 @@ pub enum Token {
     RightBracket,
     Function,
     Let,
+    Import,
 }
 
 impl Token {
@@ -44,6 +46,7 @@ impl Token {
             "return" => Some(Token::Return),
             "true" => Some(Token::TrueLiteral),
             "false" => Some(Token::FalseLiteral),
+            "import" => Some(Token::Import),
             _ => None,
         }
     }
@@ -133,6 +136,7 @@ impl Iterator for Lexer {
                 _ => Token::Bang,
             },
             ',' => Token::Comma,
+            '.' => Token::FullStop,
             ';' => Token::Semicolon,
             '(' => Token::LeftParenthesis,
             ')' => Token::RightParenthesis,

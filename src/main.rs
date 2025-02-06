@@ -22,14 +22,16 @@ fn execute_script(path: &str) {
     let src = fs::read_to_string(path).unwrap();
     let mut parser = Parser::new(Lexer::new(src.chars().collect()));
     let mut program = parser.parse().unwrap();
-    let mut eval = Evaluator::new();
+    let binding = env::current_dir().unwrap();
+    let mut eval = Evaluator::new(Box::new(binding));
     while let Some(stmt) = program.pop() {
         eval.eval_stmt(stmt).unwrap();
     }
 }
 
 fn start_repl(input: &mut impl BufRead, output: &mut impl Write) {
-    let mut evaluator = eval::Evaluator::new();
+    let binding = env::current_dir().unwrap();
+    let mut evaluator = Evaluator::new(Box::new(binding));
     loop {
         write!(output, ">>").unwrap();
         output.flush().unwrap();

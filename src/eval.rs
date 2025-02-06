@@ -1,73 +1,54 @@
 use crate::builtin;
-use crate::lexer::Token;
-use crate::parser::ExpressionNode;
+use crate::lexer::{Lexer, Token};
 use crate::parser::StatementNode;
+use crate::parser::{ExpressionNode, Parser};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
+use std::fs;
 use std::ops::{Add, Div, Mul, Not, Sub};
+use std::path::PathBuf;
 use std::rc::Rc;
 
-pub trait Environment {
-    fn declared(&self, name: &String) -> bool;
-    fn get(&self, name: &String) -> Object;
-    fn set(&mut self, name: String, value: Object);
-}
-
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub struct BaseEnvironment {
+#[derive(Debug, Eq, PartialEq, Clone)]
+pub struct Environment {
+    parent: Option<Rc<RefCell<Environment>>>,
     mem: HashMap<String, Object>,
 }
 
-impl BaseEnvironment {
-    pub fn new() -> Self {
+impl Environment {
+    fn base() -> Self {
         let mut mem = HashMap::new();
         builtin::all().into_iter().for_each(|(name, func)| {
             mem.insert(name, Object::Builtin(func));
         });
-        Self { mem }
-    }
-}
-
-impl Environment for BaseEnvironment {
-    fn declared(&self, name: &String) -> bool {
-        self.mem.get(name).is_some()
+        Self { parent: None, mem }
     }
 
-    fn get(&self, name: &String) -> Object {
-        match self.mem.get(name) {
-            None => Object::Nil,
-            Some(value) => value.clone(),
-        }
-    }
-
-    fn set(&mut self, name: String, value: Object) {
-        self.mem.insert(name, value);
-    }
-}
-
-pub struct ChildEnvironment {
-    parent: Rc<RefCell<dyn Environment>>,
-    mem: HashMap<String, Object>,
-}
-
-impl ChildEnvironment {
-    fn new(parent: Rc<RefCell<dyn Environment>>) -> Self {
+    fn child(parent: Rc<RefCell<Environment>>) -> Self {
         Self {
-            parent,
+            parent: Some(parent),
             mem: HashMap::new(),
         }
     }
-}
 
-impl Environment for ChildEnvironment {
     fn declared(&self, name: &String) -> bool {
-        self.mem.get(name).is_some() || self.parent.borrow().declared(name)
+        if let Some(parent) = &self.parent {
+            parent.borrow().declared(name)
+        } else {
+            self.mem.get(name).is_some()
+        }
     }
 
     fn get(&self, name: &String) -> Object {
         match self.mem.get(name) {
-            None => self.parent.borrow().get(name),
+            None => {
+                if let Some(parent) = &self.parent {
+                    parent.borrow().get(name)
+                } else {
+                    Object::Nil
+                }
+            }
             Some(value) => value.clone(),
         }
     }
@@ -87,6 +68,7 @@ pub enum Object {
     Function(Vec<Token>, StatementNode),
     Builtin(fn(Vec<Object>) -> Object),
     Return(Box<Object>),
+    Module(Evaluator),
 }
 
 impl Object {
@@ -216,14 +198,17 @@ impl Display for EvalError {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Evaluator {
-    env: Rc<RefCell<dyn Environment>>,
+    working_directory: Box<PathBuf>,
+    env: Rc<RefCell<Environment>>,
 }
 
 impl Evaluator {
-    pub fn new() -> Self {
+    pub fn new(working_directory: Box<PathBuf>) -> Self {
         Self {
-            env: Rc::new(RefCell::new(BaseEnvironment::new())),
+            working_directory,
+            env: Rc::new(RefCell::new(Environment::base())),
         }
     }
 
@@ -313,6 +298,10 @@ impl Evaluator {
                 }
             }
             ExpressionNode::Infix(operator, left, right) => {
+                if let Token::FullStop = operator {
+                    let left = self.eval_expr(*left)?;
+                    return self.eval_mod_resolution(left, *right);
+                }
                 let left = self.eval_expr(*left)?;
                 let right = self.eval_expr(*right)?;
                 match operator {
@@ -336,6 +325,29 @@ impl Evaluator {
                 other => Err(EvalError::unexpected_type(other)),
             },
             ExpressionNode::Call(function, args) => self.eval_call(function, args),
+            ExpressionNode::Import(path) => {
+                let mut path = self.working_directory.join(path);
+                let src = fs::read_to_string(path.clone()).unwrap();
+                let mut program = Parser::new(Lexer::new(src.chars().collect()))
+                    .parse()
+                    .unwrap();
+                // Popping the path ensures that the working directory of the child evaluator is
+                // just that, a directory. This should always be valid since imports can only occur
+                // on files.
+                path.pop();
+                let mut module = Self::new(Box::new(path));
+                while let Some(stmt) = program.pop() {
+                    module.eval_stmt(stmt)?;
+                }
+                Ok(Object::Module(module))
+            }
+        }
+    }
+
+    fn eval_mod_resolution(&self, id: Object, expr: ExpressionNode) -> Result<Object, EvalError> {
+        match id {
+            Object::Module(eval) => eval.eval_expr(expr),
+            other => Err(EvalError::unexpected_type(other)),
         }
     }
 
@@ -366,7 +378,7 @@ impl Evaluator {
         mut args: Vec<Object>,
         body: StatementNode,
     ) -> Result<Object, EvalError> {
-        let mut scope = ChildEnvironment::new(self.env.clone());
+        let mut scope = Environment::child(self.env.clone());
         for param in params.iter() {
             if let Token::Identifier(name) = param {
                 scope.set(name.clone(), args.pop().unwrap());
@@ -375,6 +387,7 @@ impl Evaluator {
             }
         }
         let mut child = Self {
+            working_directory: self.working_directory.clone(),
             env: Rc::new(RefCell::new(scope)),
         };
         match child.eval_stmt(body)? {
@@ -387,6 +400,7 @@ impl Evaluator {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
 
     #[test]
     fn test_integer_eval() {
@@ -400,7 +414,7 @@ mod tests {
                 Object::Integer(10),
             ),
         ];
-        let mut evaluator = Evaluator::new();
+        let mut evaluator = Evaluator::new(Box::new(PathBuf::from(Path::new("."))));
         for assert in assertions {
             let actual = evaluator.eval_stmt(assert.0).unwrap();
             assert_eq!(assert.1, actual);
@@ -425,7 +439,7 @@ mod tests {
                 Object::Boolean(false),
             ),
         ];
-        let mut evaluator = Evaluator::new();
+        let mut evaluator = Evaluator::new(Box::new(PathBuf::from(Path::new("."))));
         for assert in assertions {
             let actual = evaluator.eval_stmt(assert.0).unwrap();
             assert_eq!(assert.1, actual);
@@ -533,7 +547,7 @@ mod tests {
                 Object::Boolean(true),
             ),
         ];
-        let mut evaluator = Evaluator::new();
+        let mut evaluator = Evaluator::new(Box::new(PathBuf::from(Path::new("."))));
         for assert in assertions {
             let actual = evaluator.eval_stmt(assert.0).unwrap();
             assert_eq!(assert.1, actual);
@@ -565,7 +579,7 @@ mod tests {
                 Object::Boolean(false),
             ),
         ];
-        let mut evaluator = Evaluator::new();
+        let mut evaluator = Evaluator::new(Box::new(PathBuf::from(Path::new("."))));
         for assert in assertions {
             let out = evaluator.eval_stmt(StatementNode::Block(assert.0)).unwrap();
             assert_eq!(assert.1, out);
