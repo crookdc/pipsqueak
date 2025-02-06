@@ -33,3 +33,9 @@ while (i < len(names)) {
   i = i + 1;
 }
 ```
+
+### Importing scripts
+```
+let fib = import "fibonacci.sqk";
+print(fib.fib(7));
+```
