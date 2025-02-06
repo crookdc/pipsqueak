@@ -1,11 +1,13 @@
 use crate::builtin;
-use crate::lexer::Token;
-use crate::parser::ExpressionNode;
+use crate::lexer::{Lexer, Token};
 use crate::parser::StatementNode;
+use crate::parser::{ExpressionNode, Parser};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
+use std::fs;
 use std::ops::{Add, Div, Mul, Not, Sub};
+use std::path::{PathBuf};
 use std::rc::Rc;
 
 #[derive(Debug, Eq, PartialEq, Clone)]
@@ -20,10 +22,7 @@ impl Environment {
         builtin::all().into_iter().for_each(|(name, func)| {
             mem.insert(name, Object::Builtin(func));
         });
-        Self {
-            parent: None,
-            mem,
-        }
+        Self { parent: None, mem }
     }
 
     fn child(parent: Rc<RefCell<Environment>>) -> Self {
@@ -49,7 +48,7 @@ impl Environment {
                 } else {
                     Object::Nil
                 }
-            },
+            }
             Some(value) => value.clone(),
         }
     }
@@ -69,7 +68,7 @@ pub enum Object {
     Function(Vec<Token>, StatementNode),
     Builtin(fn(Vec<Object>) -> Object),
     Return(Box<Object>),
-    Module(Environment)
+    Module(Evaluator),
 }
 
 impl Object {
@@ -199,13 +198,14 @@ impl Display for EvalError {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Evaluator {
-    working_directory: String,
+    working_directory: Box<PathBuf>,
     env: Rc<RefCell<Environment>>,
 }
 
 impl Evaluator {
-    pub fn new(working_directory: String) -> Self {
+    pub fn new(working_directory: Box<PathBuf>) -> Self {
         Self {
             working_directory,
             env: Rc::new(RefCell::new(Environment::base())),
@@ -261,7 +261,6 @@ impl Evaluator {
                 Some(expr) => Ok(Object::Return(Box::new(self.eval_expr(expr)?))),
             },
             StatementNode::Expression(expr) => self.eval_expr(expr),
-            _ => todo!(),
         }
     }
 
@@ -322,6 +321,18 @@ impl Evaluator {
                 other => Err(EvalError::unexpected_type(other)),
             },
             ExpressionNode::Call(function, args) => self.eval_call(function, args),
+            ExpressionNode::Import(path) => {
+                let path = self.working_directory.join(path);
+                let src = fs::read_to_string(path.clone()).unwrap(); // TODO: Map error
+                let mut program = Parser::new(Lexer::new(src.chars().collect()))
+                    .parse()
+                    .unwrap(); // TODO: Map error
+                let mut module = Self::new(Box::new(path));
+                while let Some(stmt) = program.pop() {
+                    module.eval_stmt(stmt)?;
+                }
+                Ok(Object::Module(module))
+            }
         }
     }
 
@@ -373,7 +384,9 @@ impl Evaluator {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
     use super::*;
+
 
     #[test]
     fn test_integer_eval() {
@@ -387,7 +400,7 @@ mod tests {
                 Object::Integer(10),
             ),
         ];
-        let mut evaluator = Evaluator::new(".".to_string());
+        let mut evaluator = Evaluator::new(Box::new(PathBuf::from(Path::new("."))));
         for assert in assertions {
             let actual = evaluator.eval_stmt(assert.0).unwrap();
             assert_eq!(assert.1, actual);
@@ -412,7 +425,7 @@ mod tests {
                 Object::Boolean(false),
             ),
         ];
-        let mut evaluator = Evaluator::new(".".to_string());
+        let mut evaluator = Evaluator::new(Box::new(PathBuf::from(Path::new("."))));
         for assert in assertions {
             let actual = evaluator.eval_stmt(assert.0).unwrap();
             assert_eq!(assert.1, actual);
@@ -520,7 +533,7 @@ mod tests {
                 Object::Boolean(true),
             ),
         ];
-        let mut evaluator = Evaluator::new(".".to_string());
+        let mut evaluator = Evaluator::new(Box::new(PathBuf::from(Path::new("."))));
         for assert in assertions {
             let actual = evaluator.eval_stmt(assert.0).unwrap();
             assert_eq!(assert.1, actual);
@@ -552,7 +565,7 @@ mod tests {
                 Object::Boolean(false),
             ),
         ];
-        let mut evaluator = Evaluator::new(".".to_string());
+        let mut evaluator = Evaluator::new(Box::new(PathBuf::from(Path::new("."))));
         for assert in assertions {
             let out = evaluator.eval_stmt(StatementNode::Block(assert.0)).unwrap();
             assert_eq!(assert.1, out);

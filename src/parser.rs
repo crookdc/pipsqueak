@@ -1,6 +1,4 @@
 use crate::lexer::{Lexer, Token};
-use crate::parser::ExpressionNode::Call;
-use crate::parser::StatementNode::While;
 use std::cmp::PartialOrd;
 use std::collections::VecDeque;
 use std::fmt::{Display, Formatter};
@@ -163,17 +161,8 @@ impl Parser {
                     None => Err(ParseError::eof()),
                     Some(next) => self.parse_statement(next),
                 }?;
-                Ok(While(condition, Box::new(body)))
+                Ok(StatementNode::While(condition, Box::new(body)))
             }
-            Token::Import => {
-                let out = match self.lexer.next() {
-                    None => Err(ParseError::eof()),
-                    Some(Token::StringLiteral(path)) => Ok(StatementNode::Import(path)),
-                    Some(other) => Err(ParseError::unrecognized_token(other)),
-                }?;
-                self.expect_next_token(Token::Semicolon)?;
-                Ok(out)
-            },
             other => {
                 if let Some(Token::Assign) = self.lexer.peek() {
                     match other {
@@ -248,6 +237,18 @@ impl Parser {
                 }?;
                 Ok(ExpressionNode::Function(params, Box::new(body)))
             }
+            Token::Import => {
+                let path = match self.lexer.next() {
+                    None => Err(ParseError::eof()),
+                    Some(Token::StringLiteral(path)) => Ok(path),
+                    Some(other) => Err(ParseError::unexpected_token(
+                        Token::StringLiteral("path".to_string()),
+                        other,
+                    )),
+                }?;
+                self.expect_next_token(Token::Semicolon)?;
+                Ok(ExpressionNode::Import(path))
+            }
             _ => Err(ParseError::unrecognized_token(token)),
         }?;
         while let Some(peeked) = self.lexer.peek() {
@@ -257,7 +258,7 @@ impl Parser {
                 }
                 Token::LeftParenthesis => {
                     self.expect_next_token(Token::LeftParenthesis)?;
-                    expr = Call(
+                    expr = ExpressionNode::Call(
                         Box::new(expr),
                         self.parse_argument_list(Token::RightParenthesis)?,
                     );
@@ -405,7 +406,6 @@ pub enum StatementNode {
         Option<Box<StatementNode>>,
     ),
     While(ExpressionNode, Box<StatementNode>),
-    Import(String),
 }
 
 impl Node for StatementNode {
@@ -445,7 +445,6 @@ impl Node for StatementNode {
             StatementNode::While(condition, body) => {
                 format!("while {condition:?} then {body:?}")
             }
-            StatementNode::Import(path) => format!("import \"{}\"", path),
         }
     }
 }
@@ -462,6 +461,7 @@ pub enum ExpressionNode {
     Infix(Token, Box<ExpressionNode>, Box<ExpressionNode>),
     Function(Vec<Token>, Box<StatementNode>),
     Call(Box<ExpressionNode>, Vec<ExpressionNode>),
+    Import(String),
 }
 
 impl Node for ExpressionNode {
@@ -505,6 +505,7 @@ impl Node for ExpressionNode {
             ExpressionNode::Index(list, index) => {
                 format!("{}[{}]", list.literal(), index.literal())
             }
+            ExpressionNode::Import(path) => format!("import {path}"),
         }
     }
 }
