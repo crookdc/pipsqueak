@@ -60,6 +60,7 @@ enum Precedence {
 impl Precedence {
     fn from_operator(op: &Token) -> Option<Precedence> {
         match op {
+            Token::FullStop => Some(Precedence::Prefix),
             Token::RightParenthesis => Some(Precedence::Lowest),
             Token::RightBracket => Some(Precedence::Lowest),
             Token::Plus => Some(Precedence::Sum),

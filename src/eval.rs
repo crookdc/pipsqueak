@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::fs;
 use std::ops::{Add, Div, Mul, Not, Sub};
-use std::path::{PathBuf};
+use std::path::PathBuf;
 use std::rc::Rc;
 
 #[derive(Debug, Eq, PartialEq, Clone)]
@@ -298,6 +298,10 @@ impl Evaluator {
                 }
             }
             ExpressionNode::Infix(operator, left, right) => {
+                if let Token::FullStop = operator {
+                    let left = self.eval_expr(*left)?;
+                    return self.eval_mod_resolution(left, *right);
+                }
                 let left = self.eval_expr(*left)?;
                 let right = self.eval_expr(*right)?;
                 match operator {
@@ -322,17 +326,28 @@ impl Evaluator {
             },
             ExpressionNode::Call(function, args) => self.eval_call(function, args),
             ExpressionNode::Import(path) => {
-                let path = self.working_directory.join(path);
-                let src = fs::read_to_string(path.clone()).unwrap(); // TODO: Map error
+                let mut path = self.working_directory.join(path);
+                let src = fs::read_to_string(path.clone()).unwrap();
                 let mut program = Parser::new(Lexer::new(src.chars().collect()))
                     .parse()
-                    .unwrap(); // TODO: Map error
+                    .unwrap();
+                // Popping the path ensures that the working directory of the child evaluator is
+                // just that, a directory. This should always be valid since imports can only occur
+                // on files.
+                path.pop();
                 let mut module = Self::new(Box::new(path));
                 while let Some(stmt) = program.pop() {
                     module.eval_stmt(stmt)?;
                 }
                 Ok(Object::Module(module))
             }
+        }
+    }
+
+    fn eval_mod_resolution(&self, id: Object, expr: ExpressionNode) -> Result<Object, EvalError> {
+        match id {
+            Object::Module(eval) => eval.eval_expr(expr),
+            other => Err(EvalError::unexpected_type(other)),
         }
     }
 
@@ -384,9 +399,8 @@ impl Evaluator {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
     use super::*;
-
+    use std::path::Path;
 
     #[test]
     fn test_integer_eval() {
