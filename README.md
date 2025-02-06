@@ -10,6 +10,10 @@ in handy.
 Some liberties have been taken with the design of the language, and I hope to further experiment with implementing new 
 fun little features when the mood strikes.
 
+## Building
+This project is extremely straight forward to run with Cargo. Simply run `cargo run` within the project directory to 
+start the REPL. Alternatively you can pass the path to a script file to run that file as such `cargo run -- script.sqk`.
+
 ## Language
 ### Keywords
 The following is a list of all reserved keywords in the Pipsqueak language. Attempting to use any of these words for 
