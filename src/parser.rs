@@ -333,7 +333,6 @@ impl Parser {
         terminator: Token,
     ) -> Result<Vec<ExpressionNode>, ParseError> {
         if let Some(Token::RightParenthesis) = self.lexer.peek() {
-            self.lexer.next();
             return Ok(vec![]);
         }
 
