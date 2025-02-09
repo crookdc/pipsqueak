@@ -195,6 +195,9 @@ mod tests {
 
             10 == 10
             10 != 10
+            if
+            while
+            import
         "#;
         let expected = vec![
             Token::Let,
@@ -257,6 +260,9 @@ mod tests {
             Token::IntegerLiteral("10".to_string()),
             Token::NotEquals,
             Token::IntegerLiteral("10".to_string()),
+            Token::If,
+            Token::While,
+            Token::Import,
             Token::Eof,
         ];
         for (i, token) in Lexer::new(input.chars().collect()).enumerate() {

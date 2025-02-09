@@ -914,4 +914,84 @@ mod tests {
             other => panic!("unexpected statement {other:?}"),
         }
     }
+
+    #[test]
+    fn test_parse_while_statement() {
+        let source = r#"
+        while (a < b)
+            a = a + 1;
+        "#;
+        let mut parser = Parser::new(Lexer::new(source.chars().collect()));
+        let mut program = parser.parse().unwrap();
+        assert_eq!(1, program.statements.len());
+        match program.pop().unwrap() {
+            StatementNode::While(condition, body) => {
+                assert_eq!(
+                    condition,
+                    ExpressionNode::Infix(
+                        Token::LessThan,
+                        Box::new(ExpressionNode::Identifier("a".to_string())),
+                        Box::new(ExpressionNode::Identifier("b".to_string())),
+                    ),
+                );
+                assert_eq!(
+                    body,
+                    Box::new(StatementNode::Assign(
+                        "a".to_string(),
+                        Some(ExpressionNode::Infix(
+                            Token::Plus,
+                            Box::new(ExpressionNode::Identifier("a".to_string())),
+                            Box::new(ExpressionNode::Integer(1)),
+                        )),
+                    ))
+                );
+            }
+            other => panic!("unexpected statement {other:?}"),
+        }
+
+        let source = r#"
+        while (true) {
+            let i = 0;
+        }
+        "#;
+        let mut parser = Parser::new(Lexer::new(source.chars().collect()));
+        let mut program = parser.parse().unwrap();
+        assert_eq!(1, program.statements.len());
+        match program.pop().unwrap() {
+            StatementNode::While(condition, body) => {
+                assert_eq!(condition, ExpressionNode::Boolean(true),);
+                assert_eq!(
+                    body,
+                    Box::new(StatementNode::Block(vec![StatementNode::Let(
+                        "i".to_string(),
+                        Some(ExpressionNode::Integer(0)),
+                    )]))
+                );
+            }
+            other => panic!("unexpected statement {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_import_expression() {
+        let assertions = vec![
+            (
+                "import \"math.sqk\";",
+                StatementNode::Expression(ExpressionNode::Import("math.sqk".to_string())),
+            ),
+            (
+                "let math = import \"math.sqk\";",
+                StatementNode::Let(
+                    "math".to_string(),
+                    Some(ExpressionNode::Import("math.sqk".to_string())),
+                ),
+            ),
+        ];
+        for (src, res) in assertions {
+            let mut parser = Parser::new(Lexer::new(src.chars().collect()));
+            let mut program = parser.parse().unwrap();
+            assert_eq!(1, program.statements.len());
+            assert_eq!(res, program.pop().unwrap());
+        }
+    }
 }
